@@ -1,5 +1,4 @@
 #include <Servo.h>
-#include <SoftwareSerial.h>
 
 const int BT_RX = 10;
 const int BT_TX = 11;
@@ -24,10 +23,9 @@ bool steeringLeft = false;
 bool steeringRight = false;
 
 Servo steering;
-SoftwareSerial btSerial(BT_RX, BT_TX);
 
 void setup() {
-  btSerial.begin(9600);
+  Serial.begin(115200);
   steering.attach(SERVO_PIN);
   steering.write(SERVO_CENTER);
   pinMode(MOTOR_PWMA, OUTPUT);
@@ -38,29 +36,27 @@ void setup() {
 }
 
 void loop() {
-  if (btSerial.available() > 0) {
-    char cmd = btSerial.read();
+  if (Serial.available()) {
+    char cmd = Serial.read();
     
     switch (cmd) {
-      case 'T': moveMotor(true, 200);  break;
-      case 'X': moveMotor(false, 200); break;
-      case 't': case 'x': stopMotor(); break;
+      case 'w': moveMotor(true, 50);  break;
+      case 's': moveMotor(false, 50); break;
+      case 'x': stopMotor(); break;
 
       // УПРАВЛЕНИЕ ПОВОРОТОМ
-      case 'L': steeringLeft = true;  steeringRight = false; break;
-      case 'R': steeringRight = true; steeringLeft = false;  break;
-      case 'l': steeringLeft = false;  break; // Отпустили влево — замерли
-      case 'r': steeringRight = false; break; // Отпустили вправо — замерли
+      case 'a': steeringLeft = true;  steeringRight = false; break;
+      case 'd': steeringRight = true; steeringLeft = false;  break;
+      case 'e': steeringLeft = false;  break; // Отпустили влево — замерли
+      case 'q': steeringRight = false; break; // Отпустили вправо — замерли
 
-      case 'F': // МГНОВЕННЫЙ ВОЗВРАТ В ЦЕНТР
+      case 'c': // МГНОВЕННЫЙ ВОЗВРАТ В ЦЕНТР
         targetAngle = SERVO_CENTER;
         currentAngle = SERVO_CENTER;
         steering.write(SERVO_CENTER);
         steeringLeft = false;
         steeringRight = false;
         break;
-
-      case 'S': stopMotor(); break;
     }
   }
 
