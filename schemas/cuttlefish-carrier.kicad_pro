@@ -67,7 +67,7 @@
           "pad_connection": 1,
           "remove_islands": 0,
           "thermal_relief_gap": 0.5,
-          "thermal_relief_spoke_width": 0.5
+          "thermal_relief_spoke_width": 1.2
         }
       },
       "diff_pair_dimensions": [
@@ -77,7 +77,28 @@
           "width": 0.0
         }
       ],
-      "drc_exclusions": [],
+      "drc_exclusions": [
+        [
+          "courtyards_overlap|53127252|103072683|0e7f2e6e-2d04-4874-b009-4e46f08369c4|b206eb25-1ae1-4bde-9dbd-4b5fbaaa58d8",
+          ""
+        ],
+        [
+          "silk_over_copper|52860000|105500000|664a1379-c7e6-4cba-8eab-39d0176bd9e2|61a428dd-16ad-452d-8fe2-39f6b1514009",
+          ""
+        ],
+        [
+          "silk_over_copper|53500000|105500000|25725f9d-37fd-4a37-a466-845dd865ee3f|61a428dd-16ad-452d-8fe2-39f6b1514009",
+          ""
+        ],
+        [
+          "silk_overlap|52860000|105500000|35d8644c-5e57-4128-8759-32206e73ef09|664a1379-c7e6-4cba-8eab-39d0176bd9e2",
+          ""
+        ],
+        [
+          "silk_overlap|53500000|105500000|25725f9d-37fd-4a37-a466-845dd865ee3f|35d8644c-5e57-4128-8759-32206e73ef09",
+          ""
+        ]
+      ],
       "meta": {
         "filename": "board_design_settings.json",
         "version": 2
@@ -906,7 +927,7 @@
         "uuid": "0d35483a-0b12-46cc-b9f2-896fd6831779"
       }
     ],
-    "used_designators": "#FLG1,SBC1,SRV1,J3-6,MP1,XL4015E1-2,TB6612FNG1-2,BAT1,#PWR1-13,A1,SW1,U1,C1-2,MTR1",
+    "used_designators": "#FLG1,SBC1,SRV1,J3-6,MP1,XL4015E1-2,TB6612FNG1-2,BAT1,Arduino_Nano1,#PWR1-13,A1,SW1,U1,C1-2,MTR1",
     "variants": []
   },
   "sheets": [

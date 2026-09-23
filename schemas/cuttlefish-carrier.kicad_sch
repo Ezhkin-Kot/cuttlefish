@@ -4391,7 +4391,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "b9b3e8c3-781e-4ca0-94d0-b069a7201812")
-		(property "Reference" "A1"
+		(property "Reference" "Arduino_Nano1"
 			(at 49.276 73.914 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4413,7 +4413,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Module:Arduino_Nano_Socket"
+		(property "Footprint" "Module:Arduino_Nano_Socket_2x15"
 			(at 38.1 52.07 0)
 			(hide yes)
 			(show_name no)
@@ -4540,7 +4540,7 @@
 		(instances
 			(project "cuttlefish-carrier"
 				(path "/0d35483a-0b12-46cc-b9f2-896fd6831779"
-					(reference "A1")
+					(reference "Arduino_Nano1")
 					(unit 1)
 				)
 			)
