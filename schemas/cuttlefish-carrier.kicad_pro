@@ -79,23 +79,23 @@
       ],
       "drc_exclusions": [
         [
-          "courtyards_overlap|53127252|103072683|0e7f2e6e-2d04-4874-b009-4e46f08369c4|b206eb25-1ae1-4bde-9dbd-4b5fbaaa58d8",
+          "courtyards_overlap|53127252|103072683|8ba0c517-a189-48ab-b095-41787ea6bc01|b206eb25-1ae1-4bde-9dbd-4b5fbaaa58d8",
           ""
         ],
         [
-          "silk_over_copper|52860000|105500000|664a1379-c7e6-4cba-8eab-39d0176bd9e2|61a428dd-16ad-452d-8fe2-39f6b1514009",
+          "silk_over_copper|52860000|105500000|23de8760-a8a9-4141-a1cf-60d09b08b6d0|61a428dd-16ad-452d-8fe2-39f6b1514009",
           ""
         ],
         [
-          "silk_over_copper|53500000|105500000|25725f9d-37fd-4a37-a466-845dd865ee3f|61a428dd-16ad-452d-8fe2-39f6b1514009",
+          "silk_over_copper|53500000|105500000|7dffb652-2f0d-4360-81c6-c6086d243dab|61a428dd-16ad-452d-8fe2-39f6b1514009",
           ""
         ],
         [
-          "silk_overlap|52860000|105500000|35d8644c-5e57-4128-8759-32206e73ef09|664a1379-c7e6-4cba-8eab-39d0176bd9e2",
+          "silk_overlap|52860000|105500000|23de8760-a8a9-4141-a1cf-60d09b08b6d0|35d8644c-5e57-4128-8759-32206e73ef09",
           ""
         ],
         [
-          "silk_overlap|53500000|105500000|25725f9d-37fd-4a37-a466-845dd865ee3f|35d8644c-5e57-4128-8759-32206e73ef09",
+          "silk_overlap|53500000|105500000|35d8644c-5e57-4128-8759-32206e73ef09|7dffb652-2f0d-4360-81c6-c6086d243dab",
           ""
         ]
       ],
@@ -834,19 +834,19 @@
           "group_by": false,
           "label": "Datasheet",
           "name": "Datasheet",
-          "show": true
+          "show": false
         },
         {
           "group_by": false,
           "label": "Footprint",
           "name": "Footprint",
-          "show": true
+          "show": false
         },
         {
           "group_by": false,
           "label": "Qty",
           "name": "${QUANTITY}",
-          "show": true
+          "show": false
         },
         {
           "group_by": true,
@@ -865,10 +865,34 @@
           "label": "Description",
           "name": "Description",
           "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer",
+          "name": "Manufacturer",
+          "show": true
+        },
+        {
+          "group_by": false,
+          "label": "KiLib_Generator",
+          "name": "KiLib_Generator",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer Part #",
+          "name": "Manufacturer Part #",
+          "show": true
+        },
+        {
+          "group_by": false,
+          "label": "Qty",
+          "name": "Quantity",
+          "show": true
         }
       ],
       "filter_string": "",
-      "group_symbols": true,
+      "group_symbols": false,
       "include_excluded_from_bom": false,
       "name": "",
       "sort_asc": true,
@@ -927,7 +951,7 @@
         "uuid": "0d35483a-0b12-46cc-b9f2-896fd6831779"
       }
     ],
-    "used_designators": "#FLG1,SBC1,SRV1,J3-6,MP1,XL4015E1-2,TB6612FNG1-2,BAT1,Arduino_Nano1,#PWR1-13,A1,SW1,U1,C1-2,MTR1",
+    "used_designators": "SWITCH1,MOTOR1,BATTERY1,#FLG1,SBC1,J3-6,SRV1,MP1,XL4015E1-2,BAT1,TB6612FNG1-2,#PWR1-13,Arduino_Nano1,A1,SW1,U1,C1-2,Arduino Nano1,MTR1",
     "variants": []
   },
   "sheets": [
