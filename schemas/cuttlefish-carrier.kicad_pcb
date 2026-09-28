@@ -126,7 +126,7 @@
 			(mirror no)
 			(drillshape 0)
 			(scaleselection 1)
-			(outputdirectory "")
+			(outputdirectory "gerber/")
 		)
 	)
 	(footprint "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2_1x02_P5.00mm_Horizontal"
@@ -4503,7 +4503,7 @@
 			(at 0 25.1 90)
 			(layer "F.SilkS")
 			(hide yes)
-			(uuid "50bf6182-657f-4de9-a705-c6047fc95aed")
+			(uuid "3ce298b9-7471-4405-846a-270424afceb6")
 			(effects
 				(font
 					(size 1 1)
@@ -4514,7 +4514,7 @@
 		(property "Value" "~"
 			(at 0 15.47 0)
 			(layer "F.Fab")
-			(uuid "7eeb7073-ccae-4be7-b818-7f32673bee6d")
+			(uuid "45cebb44-91a5-4edf-a935-f4171acb4b98")
 			(effects
 				(font
 					(size 1 1)
@@ -4526,7 +4526,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "b0f7e528-9612-452a-bfcc-b3570eaaf219")
+			(uuid "ae055592-3643-4e7e-b427-a3e3587b491d")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4537,7 +4537,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "f11700db-ad73-4c4c-9f4e-79da398ada6c")
+			(uuid "c8829d14-a9e0-48ec-af0c-ccf2337b9654")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9819,6 +9819,12 @@
 				)
 			)
 		)
+	)
+	(point
+		(at 103.5 100)
+		(size 1)
+		(layer "F.Cu")
+		(uuid "ae2e7d1d-9dcc-4901-adfd-62be73cb529e")
 	)
 	(segment
 		(start 91.36 86.795)
