@@ -1,0 +1,10 @@
+[package]
+name = "cam-test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+# Без libv4l: чистый V4L2, не нужны системные dev-пакеты
+v4l = { version = "0.14", default-features = false, features = ["v4l2"] }
