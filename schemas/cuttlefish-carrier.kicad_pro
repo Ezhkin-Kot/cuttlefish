@@ -791,7 +791,7 @@
       "plot": "gerber2/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "",
+      "step": "cuttlefish-carrier.step",
       "svg": "",
       "vrml": ""
     },
