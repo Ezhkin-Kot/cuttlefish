@@ -1,301 +1,366 @@
 # Cuttlefish
 
-RC-машинка с автопилотом: самоходная платформа на Arduino Nano + одноплатный компьютер Orange Pi 3B, который по видеопотоку с камеры принимает решения о движении.
+**Cuttlefish** is an autonomous RC car platform built around an Orange Pi 3B single-board computer and an Arduino Nano microcontroller.
 
-Проект разрабатывается как курсовая работа (создание и сравнение различных реализаций автопилота), а затем будет тиражирован в 10 экземпляров для хакатона по разработке автопилота.
+The vehicle uses a camera as its primary sensor. Video is processed by an autopilot running on the Orange Pi, which generates steering and motor commands.
+An Arduino Nano handles low-level motor and servo control.
 
----
+The project combines custom 3D-printed mechanics, dedicated power and interconnection electronics, embedded firmware, and computer vision software.
 
-## 1. Цели проекта
+## Features
 
-1. Собрать надёжную, дешёвую, функциональную и повторяемую платформу (механика + электроника).
-2. Реализовать собственный автопилот, управляющий машинкой по видео с камеры.
-3. Сравнить несколько подходов к автопилоту (см. [раздел 8](#8-варианты-автопилота-для-сравнения)).
-4. Подготовить платформу и ПО для хакатона: 10 одинаковых машинок, на которых участники пишут свои автопилоты.
+- Custom 3D-printed chassis with Ackermann steering geometry.
+- Rear-wheel drive with a 12 V geared DC motor.
+- Arduino Nano for low-level hardware control.
+- Orange Pi 3B for video processing and autonomous navigation.
+- USB UVC camera with MJPEG output.
+- Two autopilot deployment modes (**TODO**):
+  - **Onboard:** all computations run directly on the Orange Pi.
+  - **Remote:** video is streamed to an external computer, which runs the autopilot and sends control commands back.
+- Modular architecture designed to support different autonomous driving algorithms (**TODO**).
 
-## 2. Состояние проекта
+## Project Status
 
-| Часть                                        | Статус                                      |
-| -------------------------------------------- | ------------------------------------------- |
-| Механика (3D-печатный каркас, колёса)        | Готово                                      |
-| Силовая электроника и питание                | Готово                                      |
-| Коммутационная плата (KiCad)                 | Разработана, изготовлена и находится в пути |
-| Прошивка Arduino Nano                        | Тестовая (ручное управление по serial)      |
-| Камера и видеопоток                          | Готово                                      |
-| ПО на Orange Pi (сервер управления и зрения) | **TODO**                                    |
-| Автопилот                                    | **TODO**                                    |
-| Тиражирование (10 шт.)                       | **TODO**                                    |
+| Component                  | Status         |
+| -------------------------- | -------------- |
+| Mechanical platform        | Complete       |
+| Power electronics          | Complete       |
+| Interconnection PCB        | Complete       |
+| Arduino firmware           | Prototype      |
+| Camera and video streaming | Complete       |
+| Orange Pi control software | In development |
+| Autonomous navigation      | Planned        |
 
-## 3. Архитектура системы
+## System Architecture
 
-```
-                 ┌──────────────────────────── Orange Pi 3B (2 Gb) ─────────────────────────────┐
-  Камера ──────► │  захват видео -> анализ сцены (автопилот) -> команды управления              │
- (USB/CSI)       └───────────────────────────────┬──────────────────────────────────────────────┘
-                                                 │ Serial (USB-CDC, 115200 бод)
-                                                 │ в будущем: UART RX/TX
-                                                 ▼
-                                   ┌───────── Arduino Nano ──────────┐
-                                   │  разбор команд, ШИМ, сервопривод│
-                                   └───────┬─────────────────┬───────┘
-                                           │                 │
-                                  TB6612FNG ──► мотор-   MG90S (серво) ──► поворот
-                                                редуктор                    передних колёс
-                                                (задние колёса)
-```
+The system is divided into two main computing units, each responsible for a separate layer of control.
 
-Разделение ответственности:
-
-- **Arduino Nano (MCU)** - "низкий уровень": управление мотором и сервой, никакой логики принятия решений.
-- **Orange Pi 3B (SBC)** - "высокий уровень": получение видео, зрение, автопилот, отправка команд в Arduino.
-
-Такое разделение сделано по следующим причинам:
-
-- Уменьшает шансы спалить GPIO одноплатника.
-- Даёт более точное управление кинематикой (так как за ШИМ сигнал отвечает отдельный MCU, для этого предназначенный).
-- Позволяет участникам хакатона работать только на уровне Orange Pi, не трогая прошивку.
-
-### 3.1. Два режима работы автопилота
-
-Планируется реализовать и сравнить два варианта размещения вычислений:
-
-**Режим A - всё на борту.** Захват видео, автопилот и управление выполняются на Orange Pi; внешние устройства не нужны.
-
-**Режим B - вычисления на внешнем сервере.** Orange Pi работает как "тонкий клиент": держит у себя веб-сервер, передаёт видеопоток по WebSocket на внешний сервер (или ноутбук), где работает автопилот, и принимает от него команды управления, которые пересылает в Arduino.
-
-```
-Режим B:
-  Камера ─► Orange Pi ══ видео (WebSocket, Wi-Fi) ══► Сервер / ноутбук (автопилот)
-                 ▲                                            │
-                 └═════════ команды управления ═══════════════┘
-                 │
-                 └─► Serial ─► Arduino Nano
+```text
+                  Orange Pi 3B
+              ┌───────────────────┐
+ Camera ─────►│ Video acquisition │
+              │        ↓          │
+              │ Scene processing  │
+              │        ↓          │
+              │     Autopilot     │
+              │        ↓          │
+              │ Control commands  │
+              └─────────┬─────────┘
+                        │ USB Serial
+                        │ 115200 baud
+                        ▼
+                  Arduino Nano
+              ┌───────────────────┐
+              │ Command parsing   │
+              │ Motor PWM control │
+              │ Servo control     │
+              └────┬─────────┬────┘
+                   │         │
+               TB6612FNG   MG90S
+                   │         │
+                DC motor  Steering
 ```
 
-|                         | Режим A (на борту)                 | Режим B (внешний сервер)                        |
-| ----------------------- | ---------------------------------- | ----------------------------------------------- |
-| Вычислительная мощность | Ограничена (RK3566, 2 Gb)          | Практически не ограничена (ноутбук/GPU)         |
-| Задержка                | Минимальная                        | Добавляется задержка сети и кодирования видео   |
-| Зависимость от сети     | Нет                                | Критична (Wi-Fi) - нужна обработка потери связи |
-| Удобство отладки        | Хуже                               | Лучше (любые инструменты на ноутбуке)           |
-| Для хакатона            | Участники ограничены ресурсами SBC | Участники пишут код на своих ноутбуках          |
+### Orange Pi 3B
 
-Сравнение режимов по задержке и качеству езды само по себе может стать частью курсовой.
+The SBC handles high-level operations:
 
-## 4. Аппаратная часть
+- Camera capture and video processing.
+- Autonomous navigation.
+- Control algorithm execution.
+- Communication with the Arduino.
+- Video streaming and remote control interfaces.
 
-### 4.1. Компоненты
+### Arduino Nano
 
-| Назначение                                   | Компонент                                                                     |
-| -------------------------------------------- | ----------------------------------------------------------------------------- |
-| Каркас                                       | 3D-печатная платформа (модели в `3d-models/`)                                 |
-| Движение                                     | Мотор-редуктор 12 В, привод задних колёс                                      |
-| Рулевое управление                           | Сервопривод MG90S с трапецией Аккремана на передних колёсах                   |
-| Драйвер мотора                               | TB6612FNG                                                                     |
-| Микроконтроллер                              | Arduino Nano                                                                  |
-| Одноплатный компьютер                        | Orange Pi 3B, 2 Gb                                                            |
-| Камера                                       | OV2710 GXIVISION 2MP, 1080P, 30 FPS, угол обзора 100° (USB UVC, отдаёт MJPEG) |
-| Аккумулятор                                  | Сборка 3x18650 (3S), номинально ~11.1 В (~12.6 В заряжено)                    |
-| Понижающий преобразователь общий 12 -> 5 В   | MP1584, 3 А (питание Arduino, серво, логики)                                  |
-| Понижающий преобразователь для SBC 12 -> 5 В | XL4015E, 4 А                                                                  |
-| Коммутационная плата                         | PCB (KiCad, `schemas/`)                                                       |
+The MCU handles low-level hardware operations:
 
-### 4.2. Питание
+- DC motor speed and direction control.
+- Steering servo control.
+- Receiving and parsing commands over Serial.
 
+This separation allows autonomous driving algorithms to be developed independently of the low-level hardware implementation.
+
+## Hardware
+
+### Components
+
+| Component                   | Description                                     |
+| --------------------------- | ----------------------------------------------- |
+| Chassis                     | Custom 3D-printed platform                      |
+| Drive motor                 | 12 V geared DC motor                            |
+| Steering                    | MG90S servo with Ackermann steering linkage     |
+| Motor driver                | TB6612FNG                                       |
+| Microcontroller (MCU)       | Arduino Nano                                    |
+| Single-board computer (SBC) | Orange Pi 3B (2 GB RAM)                         |
+| Camera                      | OV2710 GXIVISION, 2 MP, 1080p, 30 FPS, 100° FOV |
+| Battery                     | 3 × 18650 Li-ion cells (3S)                     |
+| Main DC-DC converter        | MP1584, 12 V to 5 V, 3 A                        |
+| SBC DC-DC converter         | XL4015E, 12 V to 5 V, 4 A                       |
+
+### Power System
+
+The vehicle is powered by a 3S 18650 Li-ion battery pack.
+
+```text
+              3S Battery Pack
+                 (~11.1 V)
+                     │
+                Power Switch
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+  TB6612FNG VM     MP1584      XL4015E
+        │            │            │
+    DC Motor      5 V rail     5 V rail
+                     │            │
+               Arduino Nano    Orange Pi
+               + TB6612FNG VCC
+               + Servo
 ```
- Аккумулятор 3x18650 (~12 В)
-   ├─► Выключатель ─┬─► TB6612FNG (VM) ─► мотор-редуктор 12 В
-   │                ├─► MP1584 (-> 5 В) ─► Arduino Nano, серво MG90S
-   │                └─► XL4015E (-> 5 В, 4 А) ─► Orange Pi 3B
-```
 
-Аккумуляторы - 18650 Samsung/LG HG2. Сборка **не имеет** защиты и контроллера разряда (BMS). Заряд выполняется отдельным внешним зарядным устройством: элементы вынимаются из слота, что позволяет быстро менять их на заряженные запасные.
+The two DC-DC converters provide separate 5 V power rails for the control electronics and the single-board computer.
 
-Уточнить (**TODO**): точная схема распределения, выходное напряжение XL4015E (Orange Pi 3B питается от 5 В), предохранитель.
+The battery cells are removable and charged using an external charger.
 
-**Планируется в будущем:** защита от переразряда (например, отсечка по напряжению или индикатор/датчик напряжения батареи). Пока переразряд возможен, поэтому за напряжением нужно следить вручную (ориентир: не разряжать элементы ниже ~3.0 В на ячейку, т.е. ~9 В на сборку).
+**Battery protection is not yet implemented.** The current prototype does not include a BMS or automatic undervoltage cutoff.
+Battery voltage must therefore be monitored manually. Avoid discharging individual cells below approximately 3.0 V.
 
-На плате установлены два электролитических конденсатора 470 мкФ / 16 В (C1, C2) для сглаживания питания.
+Two 470 µF / 16 V electrolytic capacitors are installed on the interconnection PCB to help stabilize the power supply.
 
-### 4.3. Распиновка Arduino Nano
+### Arduino Pinout
 
-Взято из `mcu-firmware/mcu-firmware.ino`:
+| Arduino Pin | Function                            |
+| ----------- | ----------------------------------- |
+| D9          | Steering servo signal               |
+| D3 (PWM)    | TB6612FNG PWMA                      |
+| D2          | TB6612FNG AIN1                      |
+| D4          | TB6612FNG AIN2                      |
+| D5          | TB6612FNG STBY                      |
+| USB         | Serial communication with Orange Pi |
 
-| Пин             | Назначение                                                                                                              |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| D9              | Сигнал сервопривода (steering)                                                                                          |
-| D3 (PWM)        | TB6612FNG - PWMA (скорость)                                                                                             |
-| D2              | TB6612FNG - AIN1                                                                                                        |
-| D4              | TB6612FNG - AIN2                                                                                                        |
-| D5              | TB6612FNG - STBY                                                                                                        |
-| D10 / D11       | Объявлены `BT_RX` / `BT_TX` (Bluetooth), в коде не используются - остатки прошлой версии (уточнить, нужно ли оставлять) |
-| USB             | Связь с Orange Pi (serial, 115200)                                                                                      |
-| D0 / D1 (RX/TX) | Возможная будущая замена USB на аппаратный UART (пока отложено)                                                         |
+The current implementation uses USB Serial communication at 115200 baud. Hardware UART communication is a possible future alternative.
 
-> Сейчас связь идёт по USB, и необходимости в UART нет. Если USB-кабель начнёт мешать в готовой машинке, его можно заменить на UART через преобразователь логических уровней 5 В <-> 3.3 В (Orange Pi - 3.3 В логика, Arduino Nano - 5 В).
+**Note:** Arduino Nano uses 5 V logic, while Orange Pi GPIO uses 3.3 V logic. Direct UART connections require appropriate logic-level conversion.
 
-### 4.4. Коммутационная плата
+## Mechanical Design
 
-Плата упрощает соединение всех модулей без пайки проводов "навесом". Файлы проекта KiCad - в `schemas/`:
+The chassis is designed in Fusion 360 and manufactured using 3D printing.
 
-- `cuttlefish-carrier.kicad_sch` - схема
-- `cuttlefish-carrier.kicad_pcb` - печатная плата
-- `gerber/`, `gerber2.zip` - производственные файлы
-- `cuttlefish-carrier.csv`, `cuttlefish-carrier.xlsx` - Bill of Materials (BOM)
-- `cuttlefish-carrier-all-pos.csv` - координаты компонентов
+Source files and printable models are available in [`3d-models/`](3d-models/):
 
-Основные элементы платы (из BOM):
+- `cuttlefish.f3d` — parametric Fusion 360 model.
+- `cuttlefish.stl` — printable chassis model.
 
-| Ref           | Описание                            | Кол-во |
-| ------------- | ----------------------------------- | ------ |
-| Arduino Nano1 | Гнёзда под Arduino Nano (2x15 pin)  | 2      |
-| BATTERY1      | Клеммник батареи                    | 1      |
-| SWITCH1       | Клеммник выключателя                | 1      |
-| MOTOR1        | Клеммник мотора                     | 1      |
-| SBC1          | Клеммник питания одноплатника       | 1      |
-| SRV1          | Разъём сервопривода (1x3 pin)       | 1      |
-| TB6612FNG1    | Гнёзда под драйвер мотора (1x8 pin) | 2      |
-| MP1584        | Гнёзда под модуль DC-DC             | 4      |
-| XL4015E1      | Гнёзда под модуль DC-DC             | 4      |
-| C1, C2        | 470 мкФ 16 В                        | 2      |
+## Software
 
-## 5. Механика
+The software is split between the Arduino firmware and the Orange Pi application.
 
-Модели в `3d-models/`:
+### Arduino Firmware
 
-- `robo-car.f3d` - исходник (Fusion 360)
-- `robo-car.stl` - модель для печати
+Source code: [`mcu-firmware/`](mcu-firmware/)
 
-Задачи под тиражирование (**TODO**): параметры печати (материал, заполнение, поддержки), крепёж, место под камеру и Orange Pi, время печати одного комплекта.
+The current firmware implements basic manual control over Serial communication.
 
-## 6. Программная часть
+| Command   | Action                                |
+| --------- | ------------------------------------- |
+| `w`       | Move forward                          |
+| `s`       | Move backward                         |
+| `x`       | Stop the motor                        |
+| `a` / `d` | Start steering left / right           |
+| `e` / `q` | Stop steering left / right            |
+| `c`       | Immediately return steering to center |
 
-### 6.1. Прошивка Arduino (`mcu-firmware/`)
+Current steering parameters:
 
-Текущая версия принимает однобуквенные команды по Serial (115200 бод):
+- Servo center: 90°.
+- Maximum steering offset: ±40°.
+- Steering movement: 0.8° every 15 ms.
+- Default motor PWM: 200 / 255.
 
-| Команда   | Действие                                          |
-| --------- | ------------------------------------------------- |
-| `w`       | Ехать вперёд (ШИМ = 50 из 255)                    |
-| `s`       | Ехать назад (ШИМ = 50)                            |
-| `x`       | Остановить мотор                                  |
-| `a` / `d` | Начать плавный поворот влево / вправо (удержание) |
-| `e` / `q` | Прекратить поворот влево / вправо (угол остаётся) |
-| `c`       | Мгновенный возврат руля в центр                   |
+The current firmware is a prototype intended for manual control.
+A more advanced command protocol with numerical steering and motor speed values, telemetry, and a communication watchdog is planned.
 
-Параметры: центр серво 90°, лимит ±40°, шаг 0.8° каждые 15 мс (плавное движение руля).
+### Orange Pi Software
 
-Это прототип для ручного управления с клавиатуры. Для автопилота рекомендуется доработать протокол (**TODO**):
+The Orange Pi application is planned in **Rust** and will serve as the main interface between the camera, autopilot, and microcontroller.
 
-- Команды с числовыми значениями: например `S<угол>` для руля и `M<скорость>` для мотора, вместо "нажал/отпустил".
-- Подтверждения/телеметрия в ответ (`OK`, ошибки).
-- **Watchdog**: если команд нет дольше N мс - останавливать мотор (критично для безопасности: при обрыве связи машинка не должна ехать).
-- Настраиваемая скорость вместо константы 50.
-- Для хакатона - стабильный, документированный и версионированный протокол.
+Planned functionality:
 
-### 6.2. ПО на Orange Pi (**TODO**)
+- Camera capture through V4L2.
+- Serial communication with Arduino.
+- Pluggable autopilot implementations.
+- Local and remote autonomous driving modes.
+- Remote video streaming and manual control.
+- Recording camera frames and corresponding control commands for dataset collection.
 
-Сервер управления и компьютерного зрения пишется на **Rust**. Предполагаемые функции:
+The target operating system is **Armbian (Debian 13)**.
 
-- Работа с serial-портом (отправка команд в Arduino).
-- Захват видеопотока с камеры.
-- Запуск автопилота (подключаемый модуль/режим, чтобы можно было подменять алгоритмы).
-- Ручное управление и просмотр видео удалённо (например, по Wi-Fi) для отладки, записи датасетов и хакатона.
-- Запись данных (кадры + управляющие команды) для обучения моделей.
+### Camera and Video Streaming
 
-ОС на Orange Pi: **Armbian (Debian 13)**. Сервер должен поддерживать оба режима из [раздела 3.1](#31-два-режима-работы-автопилота): локальный автопилот и приём видео/команд по сети (HTTP + WebSocket).
+The camera is an OV2710-based USB UVC device that provides MJPEG video without requiring software-side encoding.
 
-Камера подключается по USB (UVC) и отдаёт готовый MJPEG, поэтому видео можно пересылать без перекодирования (см. [6.3](#63-тест-камеры-cam-test)).
+A working video streaming prototype is available in [`cam-test/`](cam-test/).
 
-Уточнить (**TODO**): способ удалённого доступа участников (Wi-Fi, SSH), формат API для хакатона, итоговое разрешение для передачи.
+It is implemented in Rust using:
 
-### 6.3. Тест камеры (`cam-test/`)
+- `axum` for the HTTP server and WebSocket communication.
+- `v4l` for camera access through V4L2.
 
-Небольшая программа на Rust (axum + v4l): читает MJPEG-кадры с камеры через V4L2 и без перекодирования рассылает их по WebSocket; страница на `<canvas>` показывает видео и fps / Мбит/с.
+The application captures MJPEG frames and forwards them to connected clients over WebSocket.
+A browser-based interface displays the video stream along with FPS and bandwidth statistics.
 
-**Результат:** камера работает, качество изображения и угол обзора (100°) достаточны для целей проекта.
+**Supported camera modes:**
 
-Параметры камеры (по `v4l2-ctl`; в системе определяется как "Autodarts DIY Cam"):
+| Resolution  | Frame rate |
+| ----------- | ---------- |
+| 1920 × 1080 | 30 FPS     |
+| 1280 × 1024 | 30 FPS     |
+| 1280 × 960  | 30 FPS     |
+| 1280 × 720  | 30 FPS     |
+| 1024 × 768  | 30 FPS     |
+| 800 × 600   | 30 FPS     |
+| 640 × 480   | 30 FPS     |
+| 352 × 288   | 30 FPS     |
+| 320 × 240   | 30 FPS     |
 
-- Интерфейс: USB (UVC), формат MJPG.
-- Режимы: 1920x1080, 1280x1024, 1280x960, 1280x720, 1024x768, 800x600, 640x480, 352x288, 320x240; во всех 30 fps.
-- Узлы устройства: два (`/dev/video4` - видео, `/dev/video5` - метаданные). Номера `/dev/videoN` могут меняться, для автозапуска использовать `/dev/v4l/by-id/...`.
+**Building and running:**
 
-Запуск на Orange Pi:
+Install the required dependencies:
 
 ```bash
 sudo apt install -y build-essential libclang-dev clang v4l-utils
+```
+
+Build the application:
+
+```bash
 cd cam-test
 cargo build --release
+```
+
+Run the video server:
+
+```bash
 ./target/release/cam-test /dev/video4 1280 720 30 8080
 ```
 
-Аргументы: `[устройство] [ширина] [высота] [fps] [порт]`. Видео - в браузере: `http://<ip-платы>:8080/`.
+Arguments:
 
-Замечания:
-
-- `libclang-dev` нужен для сборки `v4l2-sys-mit` (bindgen); на macOS крейт не собирается (нет заголовков Linux), собирать нужно на плате.
-- Имя `<hostname>.local` (mDNS) работает не на всех устройствах (например, на Android часто нет) и не во всех сетях; надёжнее открывать по IP.
-- Задержка и нагрузка при разных разрешениях и в режиме с внешним сервером ещё не измерены (**TODO**).
-
-## 7. Структура репозитория
-
+```text
+[device] [width] [height] [fps] [port]
 ```
+
+Open the following address in a browser:
+
+```text
+http://<orange-pi-ip>:8080/
+```
+
+The camera exposes separate video and metadata device nodes. Their `/dev/videoN` numbers may change between system boots.
+For reliable device selection, use a persistent path from `/dev/v4l/by-id/`.
+
+**Build note:** `libclang-dev` is required by `v4l2-sys-mit` for bindgen. The application must be built in a Linux environment with the required V4L2 headers.
+
+## Autonomous Navigation
+
+The project is intended to support multiple autonomous driving approaches through a modular autopilot interface.
+
+Two approaches are currently considered:
+
+### Classical Computer Vision
+
+An OpenCV-based pipeline without machine learning:
+
+- Image preprocessing.
+- Road and lane detection using color segmentation and edge detection.
+- Geometric analysis and perspective transformations.
+- Steering angle estimation.
+- PID-based control.
+
+### Neural Network-Based Navigation
+
+A neural network that predicts steering and potentially motor speed directly from camera frames.
+
+One possible approach is **behavioral cloning**, where the model is trained using camera footage paired with control commands recorded during manual driving.
+
+This requires a dataset collection pipeline and an appropriate training workflow.
+
+### Deployment Modes
+
+Both approaches are intended to support two execution modes.
+
+| Aspect              | Onboard                        | Remote                                  |
+| ------------------- | ------------------------------ | --------------------------------------- |
+| Computation         | Orange Pi 3B                   | External computer                       |
+| Video processing    | Local                          | Remote                                  |
+| Network dependency  | None                           | Wi-Fi                                   |
+| Latency             | Lower                          | Includes network and streaming overhead |
+| Computing resources | Limited by RK3566 and 2 GB RAM | Depends on external hardware            |
+
+The remote mode uses WebSocket communication to transmit camera frames to an external computer and receive control commands in return.
+
+The Orange Pi acts as a bridge between the network and the Arduino.
+
+### Hardware Acceleration
+
+The Orange Pi 3B is based on the Rockchip RK3566 and provides an NPU rated at approximately 0.8 TOPS.
+
+Hardware acceleration through the RKNN toolkit is a potential option for neural network inference. Integration with the Rust application is yet to be investigated.
+
+## Repository Structure
+
+```text
 cuttlefish/
-├── 3d-models/      # CAD и STL каркаса
-├── schemas/        # KiCad: схема и плата коммутационной платы, Gerber, BOM
-├── mcu-firmware/   # Прошивка Arduino Nano
-├── cam-test/       # Тест камеры: MJPEG-стрим по WebSocket (Rust)
-└── README.md       # Этот документ
+├── 3d-models/       # Fusion 360 source and printable models
+├── schemas/         # KiCad schematics, PCB, Gerber files and BOM
+├── mcu-firmware/    # Arduino Nano firmware
+├── cam-test/        # Rust-based camera streaming prototype
+└── README.md        # Project documentation
 ```
 
-Предполагаемые будущие каталоги: `server/` (Rust-ПО для Orange Pi), `docs/`, `autopilot/`.
+Additional software components will be added as development progresses.
 
-## 8. Варианты автопилота для сравнения
+## Future Development
 
-В курсовой планируется сравнить два основных подхода (конкретика будет уточняться по мере знакомства с темой):
+The following improvements are planned:
 
-1. **Алгоритмический подход (OpenCV)** - классическое компьютерное зрение без обучения: сегментация дороги/разметки (цвет, края, преобразование Хафа), расчёт угла руля, PID.
-2. **Нейросетевой подход** - например, behavioral cloning: сеть "кадр -> руль/скорость", обучаемая на записях ручной езды (для этого нужен сбор датасета, см. [раздел 6.2](#62-по-на-orange-pi-todo)).
+- [ ] Implement the Orange Pi control application.
+- [ ] Develop a unified numerical Serial command protocol.
+- [ ] Add a communication watchdog and fail-safe motor stop.
+- [ ] Implement autonomous navigation algorithms.
+- [ ] Collect training data for neural network-based navigation.
+- [ ] Add battery voltage monitoring and undervoltage protection.
+- [ ] Evaluate the accuracy of camera-only navigation.
+- [ ] Measure video streaming latency and system performance.
+- [ ] Investigate RKNN-based neural network acceleration.
+- [ ] Improve calibration and repeatability across multiple vehicles.
 
-Возможные расширения (опционально): детекция препятствий лёгкой моделью, reinforcement learning в симуляторе.
+The platform is also intended to serve as a reproducible hardware base for educational events and robotics hackathons.
 
-Каждый подход желательно проверить в обоих режимах из [раздела 3.1](#31-два-режима-работы-автопилота) (на борту и на внешнем сервере).
+## Hardware and PCB Files
 
-Обратная связь: дополнительные энкодеры и датчики (IMU, энкодер мотора) по возможности **не используются** - цель в том, чтобы обойтись одной камерой, если точности движения будет достаточно. Если окажется недостаточно - вернуться к вопросу.
+The KiCad project is available in [`schemas/`](schemas/).
 
-Метрики сравнения (**предложение**): процент проезда трассы без вмешательства, среднее время круга, количество выездов за границу, частота кадров/задержка на Orange Pi, нагрузка на CPU/NPU, энергопотребление.
+It includes:
 
-Orange Pi 3B на базе RK3566 имеет NPU (≈0.8 TOPS), что можно использовать для ускорения нейросетей через RKNN (проверить совместимость с Rust-стеком - **TODO**).
+- `cuttlefish-carrier.kicad_sch` — schematic.
+- `cuttlefish-carrier.kicad_pcb` — PCB layout.
+- `gerber/` — manufacturing files.
+- `cuttlefish-carrier.csv`, `cuttlefish-carrier.xlsx` — bills of materials.
+- `cuttlefish-carrier-all-pos.csv` — component placement data.
 
-## 9. Подготовка к хакатону (10 машинок)
+## License
 
-Что нужно проработать (**TODO**):
+Cuttlefish consists of hardware and software components distributed under separate open-source licenses.
 
-- Стоимость комплекта (BOM на машинку) и общий бюджет.
-- Заказ печатных плат партией (Gerber уже есть) и сборка.
-- Единый образ ОС для Orange Pi (клонирование SD-карты/eMMC), уникальные имя хоста и IP для каждой машинки.
-- Документация и SDK для участников: API управления, примеры автопилота, формат данных.
-- Тестовая трасса, правила и критерии оценки.
-- Безопасность: аварийная остановка, watchdog, защита аккумуляторов, зарядка 18650 (в т.ч. хранение и транспортировка).
-- Калибровка: центр руля и ограничение угла у каждой машинки могут отличаться (MG90S имеет люфт).
-- Время работы от аккумулятора и запасные батареи.
+| Component                      | License        |
+| ------------------------------ | -------------- |
+| Hardware designs (`hardware/`) | CERN-OHL-S-2.0 |
+| MCU firmware (`mcu-firmware/`) | GPL-3.0-only   |
+| Software (`software/`)         | GPL-3.0-only   |
 
-## 10. Принятые решения и открытые вопросы
+See the respective `LICENSE` files in each directory
+for the full license texts.
 
-Принятые решения:
-
-- Камера: OV2710 GXIVISION (2 MP, 1080P, 30 FPS, 100°), USB UVC, MJPEG
-- ОС: Armbian на Debian 13.
-- Два режима автопилота: на борту и на внешнем сервере (см. [3.1](#31-два-режима-работы-автопилота)).
-- Датчики обратной связи: по возможности без них.
-- Связь SBC - MCU: USB; UART отложен.
-- Автопилот: сравнение нейросетевого и алгоритмического (OpenCV) подходов.
-
-Открытые вопросы:
-
-1. Как камера крепится на каркасе (положение, высота, угол наклона)?
-2. Как участники хакатона будут подключаться к машинке (Wi-Fi, SSH, веб-интерфейс)?
-3. Как реализовать защиту от переразряда 18650 и индикацию заряда?
-4. Достаточна ли точность движения без энкодеров/IMU?
-5. Хватит ли задержки и пропускной способности Wi-Fi для режима с внешним сервером?
+Third-party components remain under their respective licenses.

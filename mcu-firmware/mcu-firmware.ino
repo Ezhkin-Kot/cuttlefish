@@ -55,11 +55,11 @@ void loop() {
 
     switch (cmd) {
       case 'w':
-        moveMotor(true, 250);
+        moveMotor(true, 200);
         break;
 
       case 's':
-        moveMotor(false, 250);
+        moveMotor(false, 200);
         break;
 
       case 'x':

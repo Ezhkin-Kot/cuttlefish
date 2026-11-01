@@ -1,0 +1,32 @@
+                    CUTTLEFISH PROJECT LICENSING
+
+Cuttlefish contains hardware designs, firmware and software components
+distributed under separate open-source licenses.
+
+                              HARDWARE
+
+All hardware design files located in the hardware/ directory, including
+schematics, CAD models, and 3D-printable files, are licensed under the
+CERN Open Hardware Licence Version 2 - Strongly Reciprocal (CERN-OHL-S-2.0).
+
+The full license text is available in hardware/LICENSE.
+
+                            MCU FIRMWARE
+
+The microcontroller firmware located in the mcu-firmware/ directory
+is licensed under the GNU General Public License v3.0 only (GPL-3.0-only).
+
+The full license text is available in mcu-firmware/LICENSE.
+
+                              SOFTWARE
+
+Software components located in the software/ directory are licensed
+under the GNU General Public License v3.0 only (GPL-3.0-only).
+
+The full license text is available in software/LICENSE.
+
+                       THIRD-PARTY COMPONENTS
+
+Third-party libraries, dependencies, and other externally developed
+components remain under their respective licenses.
+Please refer to their original license notices.
