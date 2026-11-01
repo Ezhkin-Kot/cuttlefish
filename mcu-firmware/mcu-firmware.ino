@@ -3,8 +3,9 @@
 // Servo
 const int SERVO_PIN = 9;
 const int SERVO_CENTER = 90;
-const int SERVO_TRIM = 0;
-const int SERVO_LIMIT = 40;
+const int SERVO_TRIM = 7;
+const int SERVO_LIMIT_R = 40;
+const int SERVO_LIMIT_L = 43;
 
 // Motor driver
 const int MOTOR_PWMA = 3;
@@ -111,8 +112,8 @@ void loop() {
 
     targetAngle = constrain(
       targetAngle,
-      center - SERVO_LIMIT,
-      center + SERVO_LIMIT
+      center - SERVO_LIMIT_L,
+      center + SERVO_LIMIT_R
     );
 
     float difference = targetAngle - currentAngle;
