@@ -1,59 +1,94 @@
 #include <Servo.h>
 
-const int BT_RX = 10;
-const int BT_TX = 11;
+// Servo
 const int SERVO_PIN = 9;
+const int SERVO_CENTER = 90;
+const int SERVO_TRIM = 0;
+const int SERVO_LIMIT = 40;
+
+// Motor driver
 const int MOTOR_PWMA = 3;
 const int MOTOR_AIN1 = 2;
 const int MOTOR_AIN2 = 4;
 const int MOTOR_STBY = 5;
 
-const int SERVO_CENTER = 90;
-const int SERVO_LIMIT = 40; 
+// Steering movement
+const unsigned long STEERING_INTERVAL = 15;
+const float STEERING_STEP = 0.8;
 
 unsigned long lastServoUpdate = 0;
-const int STEERING_INTERVAL = 15; 
-const float STEERING_STEP = 0.8; // Шаг можно чуть увеличить для отзывчивости
 
 float currentAngle = 90.0;
 float targetAngle = 90.0;
 
-// Флаги для удержания поворота
 bool steeringLeft = false;
 bool steeringRight = false;
 
 Servo steering;
 
+int calibratedCenter() {
+  return SERVO_CENTER + SERVO_TRIM;
+}
+
 void setup() {
   Serial.begin(115200);
-  steering.attach(SERVO_PIN);
-  steering.write(SERVO_CENTER);
+
   pinMode(MOTOR_PWMA, OUTPUT);
   pinMode(MOTOR_AIN1, OUTPUT);
   pinMode(MOTOR_AIN2, OUTPUT);
   pinMode(MOTOR_STBY, OUTPUT);
+
   digitalWrite(MOTOR_STBY, HIGH);
+
+  steering.attach(SERVO_PIN);
+
+  currentAngle = calibratedCenter();
+  targetAngle = calibratedCenter();
+
+  steering.write(calibratedCenter());
 }
 
 void loop() {
-  if (Serial.available()) {
+  while (Serial.available()) {
     char cmd = Serial.read();
-    
+
     switch (cmd) {
-      case 'w': moveMotor(true, 50);  break;
-      case 's': moveMotor(false, 50); break;
-      case 'x': stopMotor(); break;
+      case 'w':
+        moveMotor(true, 250);
+        break;
 
-      // УПРАВЛЕНИЕ ПОВОРОТОМ
-      case 'a': steeringLeft = true;  steeringRight = false; break;
-      case 'd': steeringRight = true; steeringLeft = false;  break;
-      case 'e': steeringLeft = false;  break; // Отпустили влево — замерли
-      case 'q': steeringRight = false; break; // Отпустили вправо — замерли
+      case 's':
+        moveMotor(false, 250);
+        break;
 
-      case 'c': // МГНОВЕННЫЙ ВОЗВРАТ В ЦЕНТР
-        targetAngle = SERVO_CENTER;
-        currentAngle = SERVO_CENTER;
-        steering.write(SERVO_CENTER);
+      case 'x':
+        stopMotor();
+        break;
+
+      case 'a':
+        steeringLeft = true;
+        steeringRight = false;
+        break;
+
+      case 'd':
+        steeringRight = true;
+        steeringLeft = false;
+        break;
+
+      case 'e':
+        steeringLeft = false;
+        break;
+
+      case 'q':
+        steeringRight = false;
+        break;
+
+      case 'c':
+        targetAngle = calibratedCenter();
+        currentAngle = calibratedCenter();
+
+        steering.write(calibratedCenter());
+
         steeringLeft = false;
         steeringRight = false;
         break;
@@ -61,24 +96,38 @@ void loop() {
   }
 
   unsigned long currentMillis = millis();
+
   if (currentMillis - lastServoUpdate >= STEERING_INTERVAL) {
     lastServoUpdate = currentMillis;
 
-    // Если зажата кнопка, двигаем цель в соответствующую сторону
+    int center = calibratedCenter();
+
     if (steeringLeft) {
       targetAngle -= STEERING_STEP;
-    } else if (steeringRight) {
+    }
+    else if (steeringRight) {
       targetAngle += STEERING_STEP;
     }
 
-    // Ограничиваем цель лимитами
-    targetAngle = constrain(targetAngle, SERVO_CENTER - SERVO_LIMIT, SERVO_CENTER + SERVO_LIMIT);
+    targetAngle = constrain(
+      targetAngle,
+      center - SERVO_LIMIT,
+      center + SERVO_LIMIT
+    );
 
-    // Плавно подтягиваем физический угол серво к цели
-    if (abs(currentAngle - targetAngle) > 0.1) {
-      if (currentAngle < targetAngle) currentAngle += STEERING_STEP;
-      else if (currentAngle > targetAngle) currentAngle -= STEERING_STEP;
-      
+    float difference = targetAngle - currentAngle;
+
+    if (fabsf(difference) > 0.1) {
+      if (fabsf(difference) <= STEERING_STEP) {
+        currentAngle = targetAngle;
+      }
+      else if (difference > 0) {
+        currentAngle += STEERING_STEP;
+      }
+      else {
+        currentAngle -= STEERING_STEP;
+      }
+
       steering.write((int)currentAngle);
     }
   }
@@ -87,6 +136,7 @@ void loop() {
 void moveMotor(bool forward, int speed) {
   digitalWrite(MOTOR_AIN1, forward ? HIGH : LOW);
   digitalWrite(MOTOR_AIN2, forward ? LOW : HIGH);
+
   analogWrite(MOTOR_PWMA, speed);
 }
 
