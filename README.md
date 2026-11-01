@@ -147,7 +147,7 @@ The current implementation uses USB Serial communication at 115200 baud. Hardwar
 
 The chassis is designed in Fusion 360 and manufactured using 3D printing.
 
-Source files and printable models are available in [`3d-models/`](3d-models/):
+Source files and printable models are available in [`hardware/3d-models/`](hardware/3d-models/):
 
 - `cuttlefish.f3d` — parametric Fusion 360 model.
 - `cuttlefish.stl` — printable chassis model.
@@ -200,7 +200,7 @@ The target operating system is **Armbian (Debian 13)**.
 
 The camera is an OV2710-based USB UVC device that provides MJPEG video without requiring software-side encoding.
 
-A working video streaming prototype is available in [`cam-test/`](cam-test/).
+A working video streaming prototype is available in [`software/cam-test/`](software/cam-test/).
 
 It is implemented in Rust using:
 
@@ -312,11 +312,13 @@ Hardware acceleration through the RKNN toolkit is a potential option for neural 
 
 ```text
 cuttlefish/
-├── 3d-models/       # Fusion 360 source and printable models
-├── schemas/         # KiCad schematics, PCB, Gerber files and BOM
+├── hardware/
+│   ├── 3d-models/   # Fusion 360 source and printable models
+│   └── schemas/     # KiCad schematics, PCB, Gerber files and BOM
 ├── mcu-firmware/    # Arduino Nano firmware
-├── cam-test/        # Rust-based camera streaming prototype
-└── README.md        # Project documentation
+├── README.md        # Project documentation
+└── software/
+    └── cam-test/    # Rust-based camera streaming prototype
 ```
 
 Additional software components will be added as development progresses.
@@ -340,7 +342,7 @@ The platform is also intended to serve as a reproducible hardware base for educa
 
 ## Hardware and PCB Files
 
-The KiCad project is available in [`schemas/`](schemas/).
+The KiCad project is available in [`hardware/schemas/`](hardware/schemas/).
 
 It includes:
 
