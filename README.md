@@ -1,11 +1,26 @@
 # Cuttlefish
 
-**Cuttlefish** is an autonomous RC car platform built around an Orange Pi 3B single-board computer and an Arduino Nano microcontroller.
+<table>
+  <tr>
+    <td width="35%" valign="top">
+      <img src="docs/images/cuttlefish.gif" width="300" alt="Cuttlefish rotation">
+    </td>
+    <td width="65%" valign="top">
+      <p>
+        <strong>Cuttlefish</strong> is an autonomous RC car platform built around an Orange Pi 3B single-board computer and an Arduino Nano microcontroller.
+      </p>
+      <p>
+        The vehicle uses a camera as its primary sensor. Video is processed by an autopilot running on the Orange Pi, which generates steering and motor commands.
+        An Arduino Nano handles low-level motor and servo control.
+      </p>
+      <p>
+        The project combines custom 3D-printed mechanics, dedicated power and interconnection electronics, embedded firmware, and computer vision software.
+      </p>
+    </td>
+  </tr>
+</table>
 
-The vehicle uses a camera as its primary sensor. Video is processed by an autopilot running on the Orange Pi, which generates steering and motor commands.
-An Arduino Nano handles low-level motor and servo control.
-
-The project combines custom 3D-printed mechanics, dedicated power and interconnection electronics, embedded firmware, and computer vision software.
+<br clear="left" />
 
 ## Features
 
@@ -82,6 +97,12 @@ The MCU handles low-level hardware operations:
 This separation allows autonomous driving algorithms to be developed independently of the low-level hardware implementation.
 
 ## Hardware
+
+<p align="center">
+  <img src="docs/images/01-45-front-left.png" width="25%" />
+  <img src="docs/images/02-45-rear-left.png" width="25%" />
+  <img src="docs/images/04-45-bottom.png" width="25%" />
+</p>
 
 ### Components
 
