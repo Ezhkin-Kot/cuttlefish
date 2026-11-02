@@ -147,7 +147,18 @@ The battery cells are removable and charged using an external charger.
 **Battery protection is not yet implemented.** The current prototype does not include a BMS or automatic undervoltage cutoff.
 Battery voltage must therefore be monitored manually. Avoid discharging individual cells below approximately 3.0 V.
 
-Two 470 µF / 16 V electrolytic capacitors are installed on the interconnection PCB to help stabilize the power supply.
+### Interconnection PCB
+
+The vehicle uses a dedicated interconnection PCB as part of its power and electronics assembly.
+Two 470 µF / 16 V electrolytic capacitors are mounted on the board to help stabilize the power supply.
+
+The KiCad project is available in [`hardware/schemas/`](hardware/schemas/). It includes:
+
+- `cuttlefish-carrier.kicad_sch` — schematic.
+- `cuttlefish-carrier.kicad_pcb` — PCB layout.
+- `gerber/` — manufacturing files.
+- `cuttlefish-carrier.csv`, `cuttlefish-carrier.xlsx` — bills of materials.
+- `cuttlefish-carrier-all-pos.csv` — component placement data.
 
 ### Arduino Pinout
 
@@ -367,18 +378,6 @@ The following improvements are planned:
 - [ ] Improve calibration and repeatability across multiple vehicles.
 
 The platform is also intended to serve as a reproducible hardware base for educational events and robotics hackathons.
-
-## Hardware and PCB Files
-
-The KiCad project is available in [`hardware/schemas/`](hardware/schemas/).
-
-It includes:
-
-- `cuttlefish-carrier.kicad_sch` — schematic.
-- `cuttlefish-carrier.kicad_pcb` — PCB layout.
-- `gerber/` — manufacturing files.
-- `cuttlefish-carrier.csv`, `cuttlefish-carrier.xlsx` — bills of materials.
-- `cuttlefish-carrier-all-pos.csv` — component placement data.
 
 ## License
 
