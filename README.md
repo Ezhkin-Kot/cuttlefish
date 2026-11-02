@@ -175,7 +175,7 @@ The chassis is designed in Fusion 360 and manufactured using 3D printing.
   alt="STL model of the chassis"
 />
 
-Source files and printable models are available in [`hardware/3d-models/`](hardware/3d-models/):
+Source files and printable models are available in<br/>[`hardware/3d-models/`](hardware/3d-models/):
 
 - `cuttlefish.f3d` — parametric Fusion 360 model.
 - `cuttlefish.stl` — printable chassis model.
