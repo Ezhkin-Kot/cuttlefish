@@ -168,6 +168,13 @@ The current implementation uses USB Serial communication at 115200 baud. Hardwar
 
 The chassis is designed in Fusion 360 and manufactured using 3D printing.
 
+<img
+  src="docs/images/cuttlefish-stl.png"
+  width="300"
+  align="right"
+  alt="STL model of the chassis"
+/>
+
 Source files and printable models are available in [`hardware/3d-models/`](hardware/3d-models/):
 
 - `cuttlefish.f3d` — parametric Fusion 360 model.
