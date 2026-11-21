@@ -330,3 +330,13 @@ The browser shows pauses under **Controls**. Read these messages before
 restarting to distinguish delayed input/video from USB or camera failure.
 The separate HTTP status poll is used only when not driving; its failure does
 not close an already-established control connection.
+
+Browser stop requests include an optional `reason`, such as `Window lost focus`
+or `Stop requested from keyboard`. The server logs it as `Browser stop: ...`
+for both the control WebSocket and `POST /api/stop?reason=...`. Reasons are
+bounded to 160 characters and control characters are removed before logging.
+Legacy `{"type":"stop"}` requests remain supported.
+
+Driving key repeats are consumed even while motion is paused, so browser
+find-as-you-type and scrolling do not handle those keys. Text fields and the
+throttle slider's arrow-key controls retain their normal behavior.

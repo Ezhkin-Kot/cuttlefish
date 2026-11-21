@@ -31,6 +31,23 @@ pub struct App {
 #[derive(Deserialize)]
 pub struct Auth {
     token: Option<String>,
+    reason: Option<String>,
+}
+
+// Browser reasons are untrusted text: bound them and strip control characters
+// before including them in the state and terminal log.
+fn browser_stop_reason(reason: Option<&str>) -> String {
+    let reason: String = reason
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(160)
+        .collect();
+    if reason.is_empty() {
+        "Stop requested from browser".into()
+    } else {
+        format!("Browser stop: {reason}")
+    }
 }
 
 fn authorize(app: &App, auth: &Auth, headers: &HeaderMap) -> Result<(), StatusCode> {
@@ -100,7 +117,7 @@ async fn stop(
     app.control
         .lock()
         .unwrap()
-        .stop("Stop requested from browser");
+        .stop(&browser_stop_reason(auth.reason.as_deref()));
     Ok(Json(json!({"stopped": true})))
 }
 async fn video_upgrade(
@@ -171,7 +188,10 @@ enum Input {
         throttle: i16,
         steering: i16,
     },
-    Stop,
+    Stop {
+        #[serde(default)]
+        reason: Option<String>,
+    },
     Pause,
 }
 
@@ -282,11 +302,11 @@ async fn control(mut socket: WebSocket, app: App) {
                         "Browser paused driving; waiting for neutral input",
                     );
                 }
-                Ok(Input::Stop) => {
+                Ok(Input::Stop { reason }) => {
                     app.control
                         .lock()
                         .unwrap()
-                        .release(owner.id, "Stop requested from browser");
+                        .release(owner.id, &browser_stop_reason(reason.as_deref()));
                     return;
                 }
                 _ => {
@@ -344,6 +364,27 @@ mod tests {
         let message: serde_json::Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
         assert_eq!(message["type"], "sample");
         message["ticket"].as_u64().unwrap()
+    }
+
+    #[test]
+    fn browser_stop_reasons_are_bounded_and_legacy_stop_still_works() {
+        assert_eq!(
+            browser_stop_reason(Some("Window lost focus\n")),
+            "Browser stop: Window lost focus"
+        );
+        assert_eq!(
+            browser_stop_reason(Some(&"x".repeat(200))).len(),
+            "Browser stop: ".len() + 160
+        );
+        assert!(matches!(
+            serde_json::from_str::<Input>(r#"{"type":"stop"}"#).unwrap(),
+            Input::Stop { reason: None }
+        ));
+        assert!(matches!(
+            serde_json::from_str::<Input>(r#"{"type":"stop","reason":"Window lost focus"}"#)
+                .unwrap(),
+            Input::Stop { reason: Some(_) }
+        ));
     }
 
     #[tokio::test]

@@ -18,6 +18,11 @@ function url(path, websocket = false) {
   result.searchParams.set('token', token);
   return result.toString();
 }
+function stopUrl(reason) {
+  const result = new URL(url('/api/stop'));
+  result.searchParams.set('reason', reason);
+  return result.toString();
+}
 function clearInput() { keys.clear(); pointers.clear(); renderInput(); }
 function hasFreshVideo() {
   return videoSocket?.readyState === WebSocket.OPEN && lastRendered > 0 && performance.now() - lastRendered < 700;
@@ -53,6 +58,7 @@ function renderStatus() {
   renderInput();
 }
 function stopControl(reason = 'Vehicle stopped', notify = true) {
+  console.info(`[cuttlefish] Stop: ${reason}`);
   stoppedReason = reason;
   const socket = controlSocket;
   controlSocket = null;
@@ -62,11 +68,11 @@ function stopControl(reason = 'Vehicle stopped', notify = true) {
   pauseReason = '';
   clearInput();
   if (socket) {
-    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'stop'}));
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'stop', reason}));
     socket.close();
   }
   if (notify && token) {
-    fetch(url('/api/stop'), {method:'POST', keepalive:true}).catch(() => {});
+    fetch(stopUrl(reason), {method:'POST', keepalive:true}).catch(() => {});
   }
   renderStatus();
 }
@@ -212,20 +218,25 @@ $('stop').addEventListener('click', () => stopControl('Stopped. Take control to 
 $('throttle').addEventListener('input', () => { $('limit').textContent = `${$('throttle').value} / 255`; renderInput(); });
 window.addEventListener('keydown', (event) => {
   if (event.code === 'Space' || event.code === 'Escape') {
-    if (active || connecting) { event.preventDefault(); stopControl('Stop requested from keyboard'); }
+    if (active || connecting || event.repeat) event.preventDefault();
+    if (active || connecting) stopControl('Stop requested from keyboard');
     return;
   }
   const editing = event.target.matches?.('textarea,select,input:not([type=range])');
   const sliderArrow = event.target.type === 'range' && event.code.startsWith('Arrow');
-  if (!active || paused || event.repeat || !keyMap[event.code] || editing || sliderArrow) return;
-  event.preventDefault(); keys.add(event.code); renderInput();
+  if (!active || !keyMap[event.code] || editing || sliderArrow || event.ctrlKey || event.metaKey || event.altKey) return;
+  // Cancel native typing/scrolling on every driving keydown, including repeats
+  // and paused input. Otherwise Gecko's find-as-you-type can steal focus.
+  event.preventDefault();
+  if (paused || event.repeat) return;
+  keys.add(event.code); renderInput();
 });
 window.addEventListener('keyup', (event) => { keys.delete(event.code); renderInput(); });
 window.addEventListener('blur', () => { if (active || connecting) stopControl('Window lost focus'); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && (active || connecting)) stopControl('Tab hidden'); });
 window.addEventListener('pagehide', () => {
   if (active || connecting) {
-    navigator.sendBeacon(url('/api/stop'));
+    navigator.sendBeacon(stopUrl('Page closed'));
     stopControl('Page closed', false);
   }
 });

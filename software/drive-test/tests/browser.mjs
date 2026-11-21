@@ -64,6 +64,11 @@ try {
   await evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW'}));window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyA'}))");
   await delay(120);
   assert.equal(await evaluate('active && axes().throttle === 80 && axes().steering === -100'),true);
+  // Repeated driving keys must still cancel browser defaults (e.g. Gecko's
+  // find-as-you-type), even though they do not change the held-key state.
+  assert.equal(await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', {
+    code:'KeyW', key:'w', repeat:true, cancelable:true, bubbles:true
+  }))`),false,'Repeated W must prevent browser default behavior');
   // Stall the browser longer than the motion watchdog while W+A are held.
   // Ownership survives, output becomes neutral, and autorepeat cannot resume it.
   await evaluate("{ const end = performance.now()+350; while(performance.now()<end) {} }");
