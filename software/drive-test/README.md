@@ -175,6 +175,24 @@ reversal with the driven wheels lifted before a low-speed driving test.
 Motion settings are described in the
 [firmware documentation](../../mcu-firmware/README.md#motion-and-calibration).
 
+### Fullscreen View
+
+Click **Full screen** in the upper-right corner of the camera view, or press
+**F**, to switch to a video-first layout. A compact overlay keeps the control
+status, throttle/steering readout, throttle limit, **Take control** and **STOP**
+available. Video keeps its aspect ratio and is not cropped.
+
+**Exit full screen** or **F** returns to the normal layout. Switching views
+pauses motion and clears held keys while keeping the same control connection;
+press a direction key again after the neutral state is acknowledged.
+**Esc** exits the view and stops driving, retaining its existing stop function.
+This also applies when the browser handles fullscreen exit before the page
+receives an Escape key event.
+
+If native fullscreen is unavailable or denied, the same layout fills the
+browser window as an expanded view. Use the exit button, **F** or **Esc** to
+return. Changing tabs or leaving the browser still releases control.
+
 ## Communication and Stop Behavior
 
 Control uses a separate WebSocket from video. The server requests current
@@ -307,11 +325,18 @@ pseudo-terminals. They do not validate the Arduino sketch or physical hardware.
 The Linux camera path and integrated driving behavior still require validation
 on the Orange Pi with the real camera and Arduino.
 
+Fullscreen logic can be checked with `node --test tests/fullscreen.test.mjs`.
+These tests use a DOM/Fullscreen API model and do not open a browser. They cover
+view changes, retained ownership, neutral input, Escape-stop, rejected or
+unsupported fullscreen, and focus loss. Native fullscreen rendering still
+requires a manual browser check.
+
 Optional browser checks require Node.js 22+ and Chrome/Chromium. From
 `software/drive-test/`:
 
 ```bash
 node --check src/app.js
+node --test tests/fullscreen.test.mjs
 CHROME_BIN=/usr/bin/chromium cargo test --locked browser_smoke -- --ignored --nocapture
 ```
 

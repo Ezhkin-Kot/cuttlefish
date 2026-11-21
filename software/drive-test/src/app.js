@@ -11,6 +11,7 @@ let active = false, connecting = false, paused = false, pauseReason = '', server
 let lastRendered = 0, lastSample = 0, videoGeneration = 0, pendingFrame = null, decoding = false;
 let frameCount = 0, byteCount = 0, statsAt = performance.now();
 let stoppedReason = '';
+let immersive = false, nativeFullscreen = false, fullscreenChanging = false, requestedFullscreenExit = false;
 
 function url(path, websocket = false) {
   const result = new URL(path, location.href);
@@ -132,6 +133,85 @@ function acquire() {
   };
 }
 
+// Reuse the existing canvas and controls so view changes cannot create a
+// second control connection or a second set of held keys.
+function setImmersive(enabled) {
+  immersive = enabled;
+  $('drive-view').classList.toggle('immersive', enabled);
+  document.body.classList.toggle('view-open', enabled);
+  $('fullscreen').textContent = enabled ? 'Exit full screen' : 'Full screen ⛶';
+  $('fullscreen').setAttribute('aria-pressed', String(enabled));
+  $('fullscreen').setAttribute('aria-label', enabled ? 'Exit full screen' : 'Enter full screen');
+  $('fullscreen').title = enabled ? 'Exit full screen (F)' : 'Full screen (F)';
+  if (!enabled) $('view-notice').hidden = true;
+}
+
+async function leaveFullscreen() {
+  if (fullscreenChanging || !immersive) return;
+  if (active || connecting) pauseControl('Switching view');
+  if (document.fullscreenElement === $('drive-view')) {
+    fullscreenChanging = true;
+    requestedFullscreenExit = true;
+    $('fullscreen').disabled = true;
+    try {
+      await document.exitFullscreen();
+    } catch {
+      requestedFullscreenExit = false;
+      $('view-notice').textContent = 'Use Esc to leave full screen';
+      $('view-notice').hidden = false;
+    } finally {
+      fullscreenChanging = false;
+      $('fullscreen').disabled = false;
+    }
+  } else {
+    setImmersive(false);
+  }
+  $('fullscreen').focus({preventScroll:true});
+}
+
+async function toggleFullscreen() {
+  if (fullscreenChanging) return;
+  if (immersive) { await leaveFullscreen(); return; }
+  if (active || connecting) pauseControl('Switching view');
+  setImmersive(true);
+  $('fullscreen').focus({preventScroll:true});
+  fullscreenChanging = true;
+  $('fullscreen').disabled = true;
+  try {
+    if (!$('drive-view').requestFullscreen || !document.fullscreenEnabled) {
+      throw new Error('Fullscreen unavailable');
+    }
+    await $('drive-view').requestFullscreen();
+  } catch {
+    // Keep a useful edge-to-edge view if native fullscreen is unavailable or
+    // denied, rather than leaving the camera and controls inaccessible.
+    if (immersive) {
+      $('view-notice').textContent = 'Expanded view · F to exit';
+      $('view-notice').hidden = false;
+    }
+  } finally {
+    fullscreenChanging = false;
+    $('fullscreen').disabled = false;
+  }
+}
+
+$('fullscreen').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement === $('drive-view')) {
+    nativeFullscreen = true;
+    setImmersive(true);
+    $('view-notice').hidden = true;
+  } else if (nativeFullscreen) {
+    nativeFullscreen = false;
+    const requested = requestedFullscreenExit;
+    requestedFullscreenExit = false;
+    setImmersive(false);
+    // Some browsers consume Escape before dispatching keydown to the page.
+    // Preserve the existing Escape-stop behavior through fullscreenchange.
+    if (!requested && (active || connecting)) stopControl('Full screen exited by browser');
+  }
+});
+
 async function decodeFrames(generation) {
   if (decoding) return;
   decoding = true;
@@ -153,6 +233,7 @@ async function decodeFrames(generation) {
       const elapsed = (lastRendered - statsAt) / 1000;
       if (elapsed >= 1) {
         $('video-stats').textContent = `${canvas.width}×${canvas.height} · ${(frameCount/elapsed).toFixed(1)} FPS · ${(byteCount*8/elapsed/1e6).toFixed(1)} Mbit/s`;
+        $('view-stats').textContent = $('video-stats').textContent;
         frameCount = 0; byteCount = 0; statsAt = lastRendered;
       }
     }
@@ -218,11 +299,17 @@ $('stop').addEventListener('click', () => stopControl('Stopped. Take control to 
 $('throttle').addEventListener('input', () => { $('limit').textContent = `${$('throttle').value} / 255`; renderInput(); });
 window.addEventListener('keydown', (event) => {
   if (event.code === 'Space' || event.code === 'Escape') {
-    if (active || connecting || event.repeat) event.preventDefault();
+    if (active || connecting || event.repeat || (event.code === 'Escape' && immersive)) event.preventDefault();
     if (active || connecting) stopControl('Stop requested from keyboard');
+    if (event.code === 'Escape' && immersive) void leaveFullscreen();
     return;
   }
   const editing = event.target.matches?.('textarea,select,input:not([type=range])');
+  if (event.code === 'KeyF' && !editing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault();
+    if (!event.repeat) void toggleFullscreen();
+    return;
+  }
   const sliderArrow = event.target.type === 'range' && event.code.startsWith('Arrow');
   if (!active || !keyMap[event.code] || editing || sliderArrow || event.ctrlKey || event.metaKey || event.altKey) return;
   // Cancel native typing/scrolling on every driving keydown, including repeats
