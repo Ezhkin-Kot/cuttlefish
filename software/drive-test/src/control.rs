@@ -8,6 +8,7 @@ use std::{
 };
 
 pub const INPUT_TIMEOUT: Duration = Duration::from_millis(200);
+pub const SESSION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const CAMERA_TIMEOUT: Duration = Duration::from_millis(700);
 pub type Shared = Arc<Mutex<Control>>;
 
@@ -23,6 +24,7 @@ pub struct Status {
     pub camera_required: bool,
     pub camera_ready: bool,
     pub controlling: bool,
+    pub paused: bool,
     pub reason: String,
     pub mcu: String,
     pub frames: u64,
@@ -38,6 +40,7 @@ pub struct Control {
     owner: Option<u64>,
     next_owner: u64,
     last_input: Instant,
+    paused: bool,
     pending: Option<Command>,
     stop_pending: bool,
     reason: String,
@@ -56,6 +59,7 @@ impl Control {
             owner: None,
             next_owner: 0,
             last_input: Instant::now(),
+            paused: false,
             pending: None,
             stop_pending: true,
             reason: if serial_configured {
@@ -114,9 +118,11 @@ impl Control {
         self.next_owner += 1;
         self.owner = Some(self.next_owner);
         self.last_input = now;
+        self.paused = false;
         self.pending = None;
         self.stop_pending = true;
         self.reason = "Control connected".into();
+        eprintln!("Control {} acquired", self.next_owner);
         Ok(self.next_owner)
     }
 
@@ -133,8 +139,18 @@ impl Control {
             self.stop("Invalid control command");
             return false;
         }
-        self.pending = Some(Command::Drive { throttle, steering });
         self.last_input = now;
+        if self.paused {
+            // Only a fresh neutral sample can clear a transient stop. A late
+            // held throttle must never restart the motor after a timeout.
+            if throttle != 0 || steering != 0 || !self.camera_ready(now) {
+                return true;
+            }
+            self.paused = false;
+            self.reason = "Connection recovered. Press direction keys to drive".into();
+            eprintln!("Control {owner} resumed from neutral");
+        }
+        self.pending = Some(Command::Drive { throttle, steering });
         true
     }
 
@@ -144,21 +160,47 @@ impl Control {
         }
     }
 
+    pub fn pause(&mut self, owner: u64, reason: &str) {
+        if !self.owns(owner) {
+            return;
+        }
+        self.pending = None;
+        if !self.paused {
+            self.paused = true;
+            self.stop_pending = true;
+            self.reason = reason.into();
+            eprintln!("Control {owner} paused: {reason}");
+        }
+    }
+
+    pub fn pause_current(&mut self, reason: &str) {
+        if let Some(owner) = self.owner {
+            self.pause(owner, reason);
+        }
+    }
+
     pub fn stop(&mut self, reason: &str) {
+        if let Some(owner) = self.owner {
+            eprintln!("Control {owner} released: {reason}");
+        }
         self.owner = None;
+        self.paused = false;
         self.pending = None;
         self.stop_pending = true;
         self.reason = reason.into();
     }
 
     pub fn check(&mut self, now: Instant) {
-        if self.owner.is_some() {
+        if let Some(owner) = self.owner {
+            let age = now.saturating_duration_since(self.last_input);
             if self.shutdown || !self.serial_ready {
                 self.stop("Server shutting down or Arduino unavailable");
+            } else if age >= SESSION_TIMEOUT {
+                self.stop("Browser did not respond for 5 seconds");
             } else if !self.camera_ready(now) {
-                self.stop("Camera stopped delivering frames");
-            } else if now.saturating_duration_since(self.last_input) >= INPUT_TIMEOUT {
-                self.stop("No fresh browser input");
+                self.pause(owner, "Waiting for fresh camera frames");
+            } else if age >= INPUT_TIMEOUT {
+                self.pause(owner, "Control response delayed. Vehicle stopped");
             }
         }
     }
@@ -180,6 +222,7 @@ impl Control {
             camera_required: self.camera_required,
             camera_ready: self.camera_ready(now),
             controlling: self.owner.is_some(),
+            paused: self.paused,
             reason: self
                 .camera_error
                 .as_ref()
@@ -217,7 +260,31 @@ mod tests {
         );
         assert_eq!(c.next_command(now + Duration::from_millis(100)), None);
         assert_eq!(c.next_command(now + INPUT_TIMEOUT), Some(Command::Stop));
-        assert!(!c.drive(owner, 100, 0, now + INPUT_TIMEOUT));
+        assert!(c.owns(owner));
+        assert!(c.drive(owner, 100, 0, now + INPUT_TIMEOUT));
+        assert_eq!(c.next_command(now + INPUT_TIMEOUT), None);
+        assert!(c.status(now + INPUT_TIMEOUT).paused);
+        assert!(c.drive(owner, 0, 0, now + INPUT_TIMEOUT));
+        assert!(!c.status(now + INPUT_TIMEOUT).paused);
+        assert_eq!(
+            c.next_command(now + INPUT_TIMEOUT),
+            Some(Command::Drive {
+                throttle: 0,
+                steering: 0
+            })
+        );
+        assert!(c.drive(owner, 100, 0, now + INPUT_TIMEOUT));
+        assert_eq!(
+            c.next_command(now + INPUT_TIMEOUT),
+            Some(Command::Drive {
+                throttle: 100,
+                steering: 0
+            })
+        );
+        assert_eq!(
+            c.next_command(now + INPUT_TIMEOUT + SESSION_TIMEOUT),
+            Some(Command::Stop)
+        );
         assert!(!c.owns(owner));
     }
 
@@ -285,8 +352,14 @@ mod tests {
         for millis in (0..700).step_by(100) {
             assert!(c.drive(owner, 100, 0, now + Duration::from_millis(millis)));
         }
-        assert!(!c.drive(owner, 100, 0, now + CAMERA_TIMEOUT));
+        assert!(c.drive(owner, 100, 0, now + CAMERA_TIMEOUT));
         assert_eq!(c.next_command(now + CAMERA_TIMEOUT), Some(Command::Stop));
-        assert!(!c.owns(owner));
+        assert!(c.owns(owner));
+        assert!(c.status(now + CAMERA_TIMEOUT).paused);
+        c.frame(now + CAMERA_TIMEOUT);
+        assert!(c.drive(owner, 100, 0, now + CAMERA_TIMEOUT));
+        assert_eq!(c.next_command(now + CAMERA_TIMEOUT), None);
+        assert!(c.drive(owner, 0, 0, now + CAMERA_TIMEOUT));
+        assert!(!c.status(now + CAMERA_TIMEOUT).paused);
     }
 }

@@ -159,9 +159,15 @@ The throttle slider sets the PWM limit from 1 to 255; the default is 80.
 This is a duty-cycle command, not measured speed. Low PWM may not overcome
 motor friction. Direction buttons also support holding with a pointer or touch.
 
-Window focus loss, a hidden or closed tab, and lost or stale video release
-control. Video checks are disabled when the server is started with
-`--no-camera`. Control must be acquired again before driving resumes.
+Window focus loss or a hidden/closed tab releases control. Brief control delays
+or lost/stale video pause motion while retaining the driver's session. When the
+connection recovers, the browser clears held inputs and sends neutral axes;
+press a direction key again to move. Held-key autorepeat cannot restart motion.
+Video checks are disabled with `--no-camera`.
+
+Explicit stop, a closed control WebSocket, device failure or five seconds
+without a fresh control response releases the session. Take control again after
+these events; a short pause does not require clicking the button.
 A viewer with the access token can also use the stop button to stop the driver.
 
 Verify direction, steering clearance, key release, stop, connection loss and
@@ -173,13 +179,18 @@ Motion settings are described in the
 
 Control uses a separate WebSocket from video. The server requests current
 input nominally every 50 ms, with one request outstanding at a time. Each
-request contains a new `ticket`; its response must arrive within 150 ms of
-issuing the request. Invalid JSON, an old ticket or out-of-range values revoke
-control. Slow responses reduce the request rate rather than creating a queue
-of requests.
+request contains a new `ticket`; a drive response is accepted only within
+200 ms of issuing that request. Expired replies are discarded, without applying
+their axes or renewing the session. A missed deadline pauses motion and starts
+a new request on the same WebSocket. Invalid JSON, a future ticket or
+out-of-range axes still revoke control.
 
 A dedicated serial thread checks for stale input independently of the HTTP
-runtime. A 200 ms input timeout requests `STOP`. The thread consumes the latest
+runtime. A 200 ms input timeout requests `STOP` and retains ownership for up
+to five seconds without fresh responses. Once paused, the server requires a
+fresh sample with both axes at zero before accepting movement again. Samples
+received while waiting for camera recovery also keep motion stopped.
+The thread consumes the latest
 pending setpoint at most once; a newer setpoint can replace one that has not
 yet been sent. It does not periodically resend cached throttle.
 
@@ -190,13 +201,18 @@ settings, not guarantees of physical stopping time or distance.
 
 With camera checks enabled, the server requires a captured frame less than
 700 ms old. The browser separately checks when it last displayed a frame.
-Video connection loss or stale displayed frames release control. These checks
-do not measure camera-to-display latency.
+Video connection loss or stale displayed frames pause motion. Video reconnects
+independently of control; fresh frames and neutral input allow the existing
+session to resume. A slow video socket gets up to two seconds to complete a
+write before it is closed and reconnected. These checks do not measure
+camera-to-display latency.
 
 Serial I/O errors, a protocol mismatch, an MCU restart or a one-second response
 timeout disable serial control. Restore the device and restart the server.
-Camera capture errors also require a server restart; a temporary frame stall
-can recover, but driving control must be acquired again.
+Camera capture errors also require a server restart. A temporary frame stall
+pauses motion instead. The MCU's `EVENT TIMEOUT` indicates that its watchdog
+already stopped the motor; this pauses the session and requires neutral input
+without treating a healthy serial port as disconnected.
 
 The camera supplies JPEG frames, which the server forwards without decoding
 or re-encoding. The server retains the latest frame for delivery; the browser
@@ -253,6 +269,7 @@ has the following form:
     "camera_required": true,
     "camera_ready": true,
     "controlling": true,
+    "paused": false,
     "reason": "Control connected",
     "mcu": "STATE t=0 p=0 s=0 a=97 safe=1",
     "frames": 100
@@ -267,8 +284,11 @@ matching ticket and integer axes:
 { "type": "sample", "ticket": 1, "throttle": 80, "steering": -50 }
 ```
 
-Throttle is −255…255; steering is −100…100. Sending `{"type":"stop"}` releases
-control and requests braking. After disconnection, open a new `/control`
+Throttle is −255…255; steering is −100…100. `status.paused` reports that motion
+is stopped while the driver still owns the session. A fresh neutral sample is
+required to clear that pause. `{"type":"pause"}` requests the same temporary
+stop without giving up control; `{"type":"stop"}` releases control and
+requests braking. After disconnection, open a new `/control`
 connection to acquire control again.
 
 ## Validation
@@ -298,5 +318,15 @@ CHROME_BIN=/usr/bin/chromium cargo test --locked browser_smoke -- --ignored --no
 Substitute the installed browser path. On macOS, the test defaults to Google
 Chrome's application path if `CHROME_BIN` is unset. It starts a temporary HTTP
 server with test frames and a simulated command consumer, checks browser
-controls and captures desktop/mobile screenshots in the OS temporary directory.
+controls, a delayed browser event loop, an in-flight status failure, video
+reconnection, and desktop/mobile layout. Screenshots are saved in the OS
+temporary directory.
 The serial worker is tested separately through pseudo-terminals.
+
+### Connection Diagnostics
+
+The server logs control acquisition, pause, recovery and release with a reason.
+The browser shows pauses under **Controls**. Read these messages before
+restarting to distinguish delayed input/video from USB or camera failure.
+The separate HTTP status poll is used only when not driving; its failure does
+not close an already-established control connection.

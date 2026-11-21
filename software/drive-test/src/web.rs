@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use crate::{
     camera::Frames,
-    control::{Shared, Status},
+    control::{INPUT_TIMEOUT, Shared, Status},
 };
 use axum::{
     Json, Router,
@@ -123,7 +123,7 @@ async fn video(mut socket: WebSocket, app: App) {
         if let Some(frame) = frame {
             if !matches!(
                 timeout(
-                    Duration::from_millis(500),
+                    Duration::from_secs(2),
                     socket.send(Message::Binary(frame.as_ref().clone()))
                 )
                 .await,
@@ -172,6 +172,7 @@ enum Input {
         steering: i16,
     },
     Stop,
+    Pause,
 }
 
 // Dropping a connection, aborted handler or failed send always revokes ownership.
@@ -190,11 +191,7 @@ impl Drop for Owner {
 
 async fn send_json(socket: &mut WebSocket, value: serde_json::Value) -> bool {
     matches!(
-        timeout(
-            Duration::from_millis(50),
-            socket.send(Message::Text(value.to_string()))
-        )
-        .await,
+        timeout(INPUT_TIMEOUT, socket.send(Message::Text(value.to_string()))).await,
         Ok(Ok(()))
     )
 }
@@ -238,11 +235,18 @@ async fn control(mut socket: WebSocket, app: App) {
         {
             return;
         }
-        let deadline = tokio::time::Instant::from_std(requested_at + Duration::from_millis(150));
+        let deadline = tokio::time::Instant::from_std(requested_at + INPUT_TIMEOUT);
         loop {
-            let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, socket.recv()).await
-            else {
-                return;
+            let message = match tokio::time::timeout_at(deadline, socket.recv()).await {
+                Ok(Some(Ok(message))) => message,
+                Err(_) => {
+                    app.control
+                        .lock()
+                        .unwrap()
+                        .pause(owner.id, "Control response delayed. Vehicle stopped");
+                    break; // issue a new ticket, keeping the existing driver
+                }
+                _ => return,
             };
             let input = match message {
                 Message::Text(text) => serde_json::from_str::<Input>(&text),
@@ -254,7 +258,7 @@ async fn control(mut socket: WebSocket, app: App) {
                     ticket: received,
                     throttle,
                     steering,
-                }) if received == ticket && requested_at.elapsed() < Duration::from_millis(150) => {
+                }) if received == ticket && requested_at.elapsed() < INPUT_TIMEOUT => {
                     if !app.control.lock().unwrap().drive(
                         owner.id,
                         throttle,
@@ -265,6 +269,19 @@ async fn control(mut socket: WebSocket, app: App) {
                     }
                     break;
                 }
+                Ok(Input::Sample {
+                    ticket: received, ..
+                }) if received <= ticket => {
+                    // Late replies are discarded, never applied or used to
+                    // renew the session. Wait for the current fresh response.
+                    continue;
+                }
+                Ok(Input::Pause) => {
+                    app.control.lock().unwrap().pause(
+                        owner.id,
+                        "Browser paused driving; waiting for neutral input",
+                    );
+                }
                 Ok(Input::Stop) => {
                     app.control
                         .lock()
@@ -272,7 +289,13 @@ async fn control(mut socket: WebSocket, app: App) {
                         .release(owner.id, "Stop requested from browser");
                     return;
                 }
-                _ => return,
+                _ => {
+                    app.control
+                        .lock()
+                        .unwrap()
+                        .release(owner.id, "Invalid control message");
+                    return;
+                }
             }
         }
     }
@@ -289,7 +312,12 @@ mod tests {
     };
 
     async fn serve() -> (String, Shared, Frames, tokio::task::JoinHandle<()>) {
-        let control = Control::new(true, false);
+        serve_with_camera(false).await
+    }
+    async fn serve_with_camera(
+        camera_required: bool,
+    ) -> (String, Shared, Frames, tokio::task::JoinHandle<()>) {
+        let control = Control::new(true, camera_required);
         control.lock().unwrap().serial_ready();
         let (frames, _) = tokio::sync::watch::channel(None);
         let app = App {
@@ -374,7 +402,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stalled_or_replayed_browser_cannot_renew_lease() {
+    async fn delayed_replies_pause_without_losing_ownership_or_replaying_throttle() {
         let (base, state, _, task) = serve().await;
         let url = format!("{base}/control?token=test-control-token");
         let (mut driver, _) = connect_async(&url).await.unwrap();
@@ -386,19 +414,73 @@ mod tests {
             .await
             .unwrap();
         let second = ticket(&mut driver).await;
-        assert_ne!(first, second);
+        {
+            let mut c = state.lock().unwrap();
+            c.next_command(Instant::now()); // startup brake
+            assert_eq!(
+                c.next_command(Instant::now()),
+                Some(Command::Drive {
+                    throttle: 100,
+                    steering: 0
+                })
+            );
+        }
+        // A reply arrives after its ticket expired, with a now-stale throttle.
+        tokio::time::sleep(INPUT_TIMEOUT + Duration::from_millis(30)).await;
         driver
             .send(tungstenite::Message::Text(
-                json!({"type":"sample", "ticket":first, "throttle":255, "steering":0}).to_string(),
+                json!({"type":"sample", "ticket":second, "throttle":255, "steering":0}).to_string(),
             ))
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        assert!(!state.lock().unwrap().status(Instant::now()).controlling);
-        let (mut stalled, _) = connect_async(&url).await.unwrap();
-        ticket(&mut stalled).await;
-        tokio::time::sleep(Duration::from_millis(180)).await;
-        assert!(!state.lock().unwrap().status(Instant::now()).controlling);
+        let fresh = ticket(&mut driver).await;
+        assert!(fresh > second);
+        assert!(state.lock().unwrap().status(Instant::now()).controlling);
+        assert!(state.lock().unwrap().status(Instant::now()).paused);
+        assert_eq!(
+            state.lock().unwrap().next_command(Instant::now()),
+            Some(Command::Stop)
+        );
+        // Even a fresh held-throttle sample cannot bypass the neutral barrier.
+        driver
+            .send(tungstenite::Message::Text(
+                json!({"type":"sample", "ticket":fresh, "throttle":255, "steering":0}).to_string(),
+            ))
+            .await
+            .unwrap();
+        let neutral = ticket(&mut driver).await;
+        assert!(state.lock().unwrap().status(Instant::now()).paused);
+        assert_eq!(state.lock().unwrap().next_command(Instant::now()), None);
+        driver
+            .send(tungstenite::Message::Text(
+                json!({"type":"sample", "ticket":neutral, "throttle":0, "steering":0}).to_string(),
+            ))
+            .await
+            .unwrap();
+        let resumed = ticket(&mut driver).await;
+        assert!(!state.lock().unwrap().status(Instant::now()).paused);
+        assert_eq!(
+            state.lock().unwrap().next_command(Instant::now()),
+            Some(Command::Drive {
+                throttle: 0,
+                steering: 0
+            })
+        );
+        driver
+            .send(tungstenite::Message::Text(
+                json!({"type":"sample", "ticket":resumed, "throttle":70, "steering":0}).to_string(),
+            ))
+            .await
+            .unwrap();
+        ticket(&mut driver).await;
+        assert_eq!(
+            state.lock().unwrap().next_command(Instant::now()),
+            Some(Command::Drive {
+                throttle: 70,
+                steering: 0
+            })
+        );
+        driver.close(None).await.unwrap();
         task.abort();
     }
 
@@ -437,7 +519,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires Node >=22 and Chrome/Chromium (CHROME_BIN)"]
     async fn browser_smoke() {
-        let (base, state, frames, server) = serve().await;
+        let (base, state, frames, server) = serve_with_camera(true).await;
         let commands = Arc::new(std::sync::Mutex::new(Vec::new()));
         let consumer = {
             let state = state.clone();
@@ -452,8 +534,10 @@ mod tests {
             })
         };
         let image = Arc::new(include_bytes!("../../../docs/images/05-front.png").to_vec());
+        let camera_state = state.clone();
         let camera = tokio::spawn(async move {
             loop {
+                camera_state.lock().unwrap().frame(Instant::now());
                 frames.send_replace(Some(image.clone()));
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }

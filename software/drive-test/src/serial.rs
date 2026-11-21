@@ -85,6 +85,15 @@ pub fn run(port: &mut dyn SerialPort, state: &Shared) -> Result<(), String> {
                     last_response = now;
                 } else if line.starts_with("HELLO") {
                     return Err(format!("unsupported firmware: {line}"));
+                } else if ready && line == "EVENT TIMEOUT" {
+                    // The firmware already braked. Keep the healthy USB link;
+                    // require neutral input before resuming the same session.
+                    last_response = now;
+                    state
+                        .lock()
+                        .unwrap()
+                        .pause_current("MCU watchdog stopped the motor; waiting for neutral input");
+                    send(port, Command::Stop)?;
                 } else if ready && (line.starts_with("ERR") || line.starts_with("EVENT")) {
                     return Err(format!("MCU stopped: {line}"));
                 } else if ready && (line.starts_with("STATE ") || line.starts_with("OK ")) {
@@ -152,16 +161,21 @@ mod tests {
         port.set_timeout(IO_TIMEOUT).unwrap();
         let running = Arc::new(AtomicBool::new(true));
         let reboot = Arc::new(AtomicBool::new(false));
+        let watchdog = Arc::new(AtomicBool::new(false));
         let commands = Arc::new(Mutex::new(Vec::<String>::new()));
         let emulator_thread = {
             let running = running.clone();
             let reboot = reboot.clone();
+            let watchdog = watchdog.clone();
             let commands = commands.clone();
             thread::spawn(move || {
                 // Emulate the startup greeting, just as the actual firmware does.
                 emulator.write_all(b"HELLO CUTTLEFISH 1\n").unwrap();
                 let mut input = Vec::new();
                 while running.load(Ordering::Relaxed) {
+                    if watchdog.swap(false, Ordering::Relaxed) {
+                        emulator.write_all(b"EVENT TIMEOUT\n").unwrap();
+                    }
                     if reboot.swap(false, Ordering::Relaxed) {
                         emulator.write_all(b"HELLO CUTTLEFISH 1\n").unwrap();
                     }
@@ -239,7 +253,15 @@ mod tests {
                 .count(),
             1
         );
-        assert!(!state.lock().unwrap().owns(owner));
+        assert!(state.lock().unwrap().owns(owner));
+        assert!(state.lock().unwrap().status(Instant::now()).paused);
+        state.lock().unwrap().drive(owner, 0, 0, Instant::now());
+        assert!(!state.lock().unwrap().status(Instant::now()).paused);
+        watchdog.store(true, Ordering::Relaxed);
+        wait_until(&|| state.lock().unwrap().status(Instant::now()).paused);
+        assert!(state.lock().unwrap().status(Instant::now()).serial_ready);
+        assert!(state.lock().unwrap().owns(owner));
+        state.lock().unwrap().release(owner, "Test completed");
         let second = state.lock().unwrap().acquire(Instant::now()).unwrap();
         assert!(state.lock().unwrap().drive(second, -50, 0, Instant::now()));
         reboot.store(true, Ordering::Relaxed);

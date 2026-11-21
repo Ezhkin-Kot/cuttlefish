@@ -46,11 +46,40 @@ try {
   await call('Page.bringToFront');
   await waitFor(()=>evaluate("document.readyState === 'complete' && !document.getElementById('arm').disabled"),'Arm button not enabled');
   assert.equal(await evaluate("document.hasFocus()"),true);
+  // A status request started before acquisition may fail afterwards. It must
+  // not tear down a healthy control WebSocket.
+  await evaluate(`
+    globalThis.savedFetch = window.fetch;
+    globalThis.failedPolls = [];
+    window.fetch = (input, options) => String(input).includes('/api/status')
+      ? new Promise((resolve, reject) => failedPolls.push(reject))
+      : savedFetch(input, options);
+    void pollStatus();
+  `);
   await evaluate("document.getElementById('arm').click()");
-  await waitFor(()=>evaluate('active'),'Control not acquired');
+  await waitFor(()=>evaluate('active && !paused'),'Control not acquired');
+  await evaluate("window.fetch = savedFetch; failedPolls.forEach(reject => reject(new Error('simulated status timeout'))); void 0");
+  await delay(100);
+  assert.equal(await evaluate('active && !paused'),true);
   await evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW'}));window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyA'}))");
   await delay(120);
   assert.equal(await evaluate('active && axes().throttle === 80 && axes().steering === -100'),true);
+  // Stall the browser longer than the motion watchdog while W+A are held.
+  // Ownership survives, output becomes neutral, and autorepeat cannot resume it.
+  await evaluate("{ const end = performance.now()+350; while(performance.now()<end) {} }");
+  await waitFor(()=>evaluate('active && !paused && axes().throttle === 0 && axes().steering === 0'),'Delayed browser did not recover safely');
+  await evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',repeat:true}))");
+  await delay(100);
+  assert.equal(await evaluate('axes().throttle'),0);
+  await evaluate("window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyW'}));window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW'}))");
+  await delay(120);
+  assert.equal(await evaluate('active && !paused && axes().throttle === 80'),true);
+  // Reconnect just the video socket: brake without requiring Take control.
+  await evaluate("videoSocket.close()");
+  await waitFor(()=>evaluate('active && paused'),'Video disconnect did not pause');
+  assert.equal(await evaluate('axes().throttle'),0);
+  await waitFor(()=>evaluate('active && !paused && hasFreshVideo()'),'Video did not recover within the same control session');
+  assert.equal(await evaluate('axes().throttle'),0);
   await evaluate("window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyA'}));window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyW'}))");
   await delay(120);
   assert.equal(await evaluate('axes().throttle === 0 && axes().steering === 0'),true);
@@ -76,7 +105,7 @@ try {
   const mobile=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
   await writeFile(join(tmpdir(),'cuttlefish-web-mobile.png'),Buffer.from(mobile.data,'base64'));
   assert.deepEqual(errors,[]);
-  console.log('Browser checks passed: real Rust HTTP/WebSocket server, WASD/arrows, release, Space, focus loss, rearm, desktop/mobile layout, no JS errors.');
+  console.log('Browser checks passed: real Rust HTTP/WebSocket server, WASD/arrows, release, Space, focus loss, rearm, delayed browser, failed status poll, video reconnect, desktop/mobile layout, no JS errors.');
 } finally {
   debuggerSocket?.close();
   for(const child of children.reverse()) {

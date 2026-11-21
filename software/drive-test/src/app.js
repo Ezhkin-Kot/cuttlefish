@@ -7,7 +7,7 @@ const keys = new Set();
 const pointers = new Map();
 let token = new URLSearchParams(location.hash.slice(1)).get('token') || sessionStorage.getItem('cuttlefish-token') || '';
 let controlSocket = null, videoSocket = null;
-let active = false, connecting = false, serverStatus = null;
+let active = false, connecting = false, paused = false, pauseReason = '', serverStatus = null;
 let lastRendered = 0, lastSample = 0, videoGeneration = 0, pendingFrame = null, decoding = false;
 let frameCount = 0, byteCount = 0, statsAt = performance.now();
 let stoppedReason = '';
@@ -19,12 +19,15 @@ function url(path, websocket = false) {
   return result.toString();
 }
 function clearInput() { keys.clear(); pointers.clear(); renderInput(); }
+function hasFreshVideo() {
+  return videoSocket?.readyState === WebSocket.OPEN && lastRendered > 0 && performance.now() - lastRendered < 700;
+}
 function axes() {
   const held = new Set([...keys].map(code => keyMap[code]));
   for (const key of pointers.values()) held.add(key);
   return {
-    throttle: active ? (Number(held.has('up')) - Number(held.has('down'))) * Number($('throttle').value) : 0,
-    steering: active ? (Number(held.has('right')) - Number(held.has('left'))) * 100 : 0,
+    throttle: active && !paused ? (Number(held.has('up')) - Number(held.has('down'))) * Number($('throttle').value) : 0,
+    steering: active && !paused ? (Number(held.has('right')) - Number(held.has('left'))) * 100 : 0,
     held
   };
 }
@@ -34,17 +37,17 @@ function renderInput() {
   $('steering-value').textContent = state.steering;
   document.querySelectorAll('[data-key]').forEach(button => {
     button.dataset.held = active && state.held.has(button.dataset.key);
-    button.disabled = !active;
+    button.disabled = !active || paused;
   });
 }
 function renderStatus() {
   const ready = serverStatus?.serial_ready && serverStatus?.camera_ready;
-  const freshVideo = serverStatus && (!serverStatus.camera_required || performance.now() - lastRendered < 700);
+  const freshVideo = serverStatus && (!serverStatus.camera_required || hasFreshVideo());
   $('arm').disabled = !ready || !freshVideo || active || connecting || serverStatus?.controlling;
   $('stop').disabled = !token;
   $('arm').textContent = active ? 'You have control' : connecting ? 'Connecting…' : 'Take control';
   $('status').classList.toggle('active', active);
-  $('status').textContent = active ? 'Ready to drive. Hold the direction keys' : stoppedReason || serverStatus?.reason || 'Waiting for server';
+  $('status').textContent = active ? (paused ? `Paused: ${pauseReason}. Release the keys and wait` : 'Ready to drive. Hold the direction keys') : stoppedReason || serverStatus?.reason || 'Waiting for server';
   $('connection').textContent = serverStatus ? (serverStatus.serial_ready ? 'Arduino connected' : 'Arduino unavailable') : 'Disconnected';
   $('telemetry').textContent = serverStatus?.mcu || 'Waiting for Arduino state';
   renderInput();
@@ -55,6 +58,8 @@ function stopControl(reason = 'Vehicle stopped', notify = true) {
   controlSocket = null;
   active = false;
   connecting = false;
+  paused = false;
+  pauseReason = '';
   clearInput();
   if (socket) {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type:'stop'}));
@@ -63,6 +68,20 @@ function stopControl(reason = 'Vehicle stopped', notify = true) {
   if (notify && token) {
     fetch(url('/api/stop'), {method:'POST', keepalive:true}).catch(() => {});
   }
+  renderStatus();
+}
+// A transient delay stops motion without abandoning a healthy control socket.
+// Clear held inputs once; key autorepeat cannot restore them after recovery.
+function pauseControl(reason, notify = true) {
+  if (!active && !connecting) return;
+  if (!paused) {
+    paused = true;
+    clearInput();
+    if (notify && controlSocket?.readyState === WebSocket.OPEN) {
+      controlSocket.send(JSON.stringify({type:'pause'}));
+    }
+  }
+  pauseReason = reason;
   renderStatus();
 }
 function acquire() {
@@ -81,8 +100,14 @@ function acquire() {
       if (message.type !== 'sample' || !Number.isSafeInteger(message.ticket)) throw new Error('Unexpected server response');
       if (document.hidden || !document.hasFocus()) { stopControl('Page lost focus'); return; }
       serverStatus = message.status;
-      if (serverStatus.camera_required && performance.now() - lastRendered >= 700) {
-        stopControl('No fresh camera image'); return;
+      if (serverStatus.camera_required && !hasFreshVideo()) {
+        pauseControl('Waiting for fresh video');
+      } else if (serverStatus.paused) {
+        pauseControl(serverStatus.reason, false);
+      } else if (paused) {
+        paused = false;
+        pauseReason = '';
+        clearInput();
       }
       connecting = false;
       active = true;
@@ -93,8 +118,8 @@ function acquire() {
       renderStatus();
     } catch (error) { stopControl(`Control error: ${error.message}`); }
   };
-  socket.onclose = () => {
-    if (controlSocket === socket) stopControl('Control disconnected. Take control again', false);
+  socket.onclose = (event) => {
+    if (controlSocket === socket) stopControl(`Control connection closed (${event.code}). Take control again`, false);
   };
   socket.onerror = () => {
     if (controlSocket === socket) stopControl('Control server connection lost', false);
@@ -126,7 +151,7 @@ async function decodeFrames(generation) {
       }
     }
   } catch (error) {
-    stopControl(`Could not display video: ${error.message}`);
+    pauseControl(`Could not display video: ${error.message}`);
   } finally {
     decoding = false;
     if (pendingFrame) decodeFrames(videoGeneration);
@@ -147,23 +172,23 @@ function connectVideo() {
     if (videoSocket !== socket) return;
     $('video-message').hidden = false;
     $('video-message').textContent = 'Video disconnected. Reconnecting…';
-    if (active && serverStatus?.camera_required) stopControl('Video connection lost');
+    if (active && serverStatus?.camera_required) pauseControl('Video reconnecting');
     setTimeout(() => { if (videoSocket === socket) connectVideo(); }, 1000);
   };
 }
 async function pollStatus() {
-  if (!token) return;
+  if (!token || active || connecting) return;
   const requestToken = token;
   try {
     const response = await fetch(url('/api/status'), {cache:'no-store', signal:AbortSignal.timeout(1500)});
     if (!response.ok) throw new Error(response.status === 401 ? 'Invalid access token' : 'Server unavailable');
     const status = await response.json();
-    if (token !== requestToken) return;
+    if (token !== requestToken || active || connecting) return;
     serverStatus = status;
-    if (active && (!status.serial_ready || !status.camera_ready)) {
-      stopControl(status.reason, false);
-    }
   } catch (error) {
+    // An in-flight status poll may fail after control was acquired. Control
+    // samples already carry authoritative status; do not tear down that socket.
+    if (token !== requestToken || active || connecting) return;
     serverStatus = null;
     stopControl(error.message, false);
   }
@@ -192,7 +217,7 @@ window.addEventListener('keydown', (event) => {
   }
   const editing = event.target.matches?.('textarea,select,input:not([type=range])');
   const sliderArrow = event.target.type === 'range' && event.code.startsWith('Arrow');
-  if (!active || !keyMap[event.code] || editing || sliderArrow) return;
+  if (!active || paused || event.repeat || !keyMap[event.code] || editing || sliderArrow) return;
   event.preventDefault(); keys.add(event.code); renderInput();
 });
 window.addEventListener('keyup', (event) => { keys.delete(event.code); renderInput(); });
@@ -206,7 +231,7 @@ window.addEventListener('pagehide', () => {
 });
 document.querySelectorAll('[data-key]').forEach(button => {
   button.addEventListener('pointerdown', (event) => {
-    if (!active || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (!active || paused || (event.pointerType === 'mouse' && event.button !== 0)) return;
     event.preventDefault(); button.setPointerCapture(event.pointerId);
     pointers.set(event.pointerId, button.dataset.key); renderInput();
   });
@@ -216,8 +241,8 @@ document.querySelectorAll('[data-key]').forEach(button => {
 });
 setInterval(() => {
   const now = performance.now();
-  if (active && now - lastSample >= 250) stopControl('No fresh requests from server');
-  if (active && serverStatus?.camera_required && now - lastRendered >= 700) stopControl('Camera image is stale');
+  if (active && now - lastSample >= 250) pauseControl('Waiting for control connection');
+  if (active && serverStatus?.camera_required && !hasFreshVideo()) pauseControl('Waiting for fresh video');
   if (lastRendered && now - lastRendered >= 700) {
     $('video-message').hidden = false;
     $('video-message').textContent = 'No fresh video';

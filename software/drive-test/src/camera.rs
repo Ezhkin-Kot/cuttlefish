@@ -27,10 +27,10 @@ pub fn spawn(config: Config, frames: Frames, state: Shared) {
 #[cfg(target_os = "linux")]
 fn capture(cfg: Config, frames: Frames, state: &Shared) -> Result<(), String> {
     use v4l::{
+        Device, FourCC, Fraction,
         buffer::Type,
         io::{mmap::Stream, traits::CaptureStream},
         video::Capture,
-        Device, FourCC, Fraction,
     };
     let run = || -> Result<(), Box<dyn std::error::Error>> {
         let dev = Device::with_path(&cfg.device)?;
