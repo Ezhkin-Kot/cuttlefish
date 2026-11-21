@@ -1,0 +1,20 @@
+[package]
+name = "drive-test"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serialport = { version = "4.8", default-features = false }
+rand = "0.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# V4L2 is Linux-only. The server/control tests and --no-camera also run on macOS.
+v4l = { version = "0.14", default-features = false, features = ["v4l2"] }
+
+[dev-dependencies]
+tokio-tungstenite = "0.24"
+futures-util = { version = "0.3", features = ["sink"] }
